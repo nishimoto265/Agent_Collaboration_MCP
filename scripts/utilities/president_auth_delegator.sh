@@ -1,0 +1,636 @@
+#!/bin/bash
+
+# 🤖 President認証代行システム
+# PresidentがPlaywright MCPを使って他ペインの認証を代行する
+
+set -e
+
+# ログ関数
+log_delegator() {
+    echo -e "\033[1;35m[DELEGATOR]\033[0m $1"
+}
+
+log_error() {
+    echo -e "\033[1;31m[ERROR]\033[0m $1"
+}
+
+log_success() {
+    echo -e "\033[1;32m[SUCCESS]\033[0m $1"
+}
+
+# MCPディレクトリ内で完全に完結する設定
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # MCPルートディレクトリ
+
+# MCPディレクトリ内のスクリプトを使用
+PROJECT_DIR="$(cd "$MCP_DIR/../.." && pwd)"  # MCPの2つ上がプロジェクトルート
+AUTH_HELPER="$MCP_DIR/scripts/agent_tools/auth_helper.sh"
+PANE_CONTROLLER="$MCP_DIR/scripts/agent_tools/pane_controller.sh"
+QUICK_SEND_SCRIPT="$MCP_DIR/scripts/multiagent/quick_send_with_verify.sh"
+
+# President自律認証依頼機能
+request_president_auto_auth() {
+    local president_target="multiagent:0.16"
+    local auth_helper_target="multiagent:0.17"  # 認証専用ペイン
+    
+    log_delegator "🤖 President自律認証依頼開始..."
+    
+    # 認証専用ペインの存在確認
+    if ! tmux list-panes -t multiagent -F "#{pane_index}" | grep -q "^17$"; then
+        log_error "認証専用ペイン（17）が存在しません"
+        log_delegator "scripts/multiagent/add_auth_pane.sh add を実行してください"
+        return 1
+    fi
+    
+    # 認証URLを検出
+    local screen=$(tmux capture-pane -t "$auth_helper_target" -p -S - 2>/dev/null || echo "")
+    local auth_url=$(echo "$screen" | tr -d '\n' | grep -oE 'https://[^[:space:]"'\'']+' | grep -E 'claude\.ai.*oauth|anthropic\.com.*oauth' | head -1)
+    if [ -n "$auth_url" ]; then
+        log_delegator "✅ 動的URL検出: $auth_url"
+    else
+        log_delegator "❌ 認証URL検出失敗 - 自律認証を中止"
+        return 1
+    fi
+    
+    # Agent自律認証指示
+    local auth_request="あなた自身のClaude認証を完了してください。以下のURLにアクセスして認証を完了してください: $auth_url
+
+Playwright MCPを使用して:
+1. URLにアクセス
+2. ページの内容を確認  
+3. 承認ボタンを見つけてクリック
+4. 認証完了まで進める
+
+完了したら「認証完了」と報告してください。"
+    
+    # Presidentに指示を送信
+    if [ -f "$QUICK_SEND_SCRIPT" ]; then
+        "$QUICK_SEND_SCRIPT" "president" "$auth_request" --no-verify
+    else
+        tmux send-keys -t "$president_target" "$auth_request" C-m
+    fi
+    
+    log_delegator "✅ President自律認証依頼送信完了"
+    
+    # 認証完了を待機
+    local wait_count=0
+    local max_wait=30
+    while [ $wait_count -lt $max_wait ]; do
+        screen=$(tmux capture-pane -t "$president_target" -p -S - 2>/dev/null || echo "")
+        
+        # 認証完了の報告または状態を検出
+        if echo "$screen" | grep -q "認証完了\|authentication.*completed\|login.*successful\|How can I help\|/help for help"; then
+            log_success "✅ President自律認証完了"
+            return 0
+        fi
+        
+        sleep 2
+        wait_count=$((wait_count + 2))
+        
+        if [ $((wait_count % 10)) -eq 0 ]; then
+            log_delegator "⏳ President自律認証待機中... ($wait_count/$max_wait 秒)"
+        fi
+    done
+    
+    log_delegator "⚠️ President自律認証タイムアウト"
+    return 1
+}
+
+# President認証済み確認（スキップ機能付き）
+check_president_authenticated() {
+    local president_target="multiagent:0.16"
+    local max_wait="${1:-30}"
+    local enable_auto_approve="${2:-true}"
+    
+    log_delegator "🔍 President認証状態確認開始..."    
+    
+    # 最初に即座に認証完了チェック
+    local screen=$(tmux capture-pane -t "$president_target" -p -S - 2>/dev/null || echo "")
+    
+    # 既に認証完了している場合は即座に返す
+    if echo "$screen" | grep -q "/help for help.*status.*current setup"; then
+        log_success "✅ President既に認証完了（即座に検出）"
+        return 0
+    fi
+    
+    # 改行で分かれている場合も検出
+    if echo "$screen" | grep -q "/help for help" && echo "$screen" | grep -q "for your current setup"; then
+        log_success "✅ President既に認証完了（分割表示検出）"
+        return 0
+    fi
+    
+    # その他の起動完了パターン
+    if echo "$screen" | grep -i -q "how can i help\|try \"edit\|tip:" && \
+       ! echo "$screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+        log_success "✅ President既に認証完了（UIパターン検出）"
+        return 0
+    fi
+    
+    # プロンプトが表示されている状態
+    if echo "$screen" | grep -q "^>\|) \$\|~\$\|#\$" && \
+       ! echo "$screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+        log_success "✅ President既に認証完了（プロンプト検出）"
+        return 0
+    fi
+    
+    # 認証が必要な場合のみ待機ループに入る
+    log_delegator "President認証待機を開始します（${max_wait}秒）..."
+    
+    local wait_count=0
+    while [ $wait_count -lt $max_wait ]; do
+        # Presidentの画面内容を取得
+        screen=$(tmux capture-pane -t "$president_target" -p -S - 2>/dev/null || echo "")
+        
+        # 起動完了パターンをチェック
+        if echo "$screen" | grep -q "/help for help.*status.*current setup"; then
+            log_success "✅ President認証完了確認（ヘルプメッセージ表示）"
+            return 0
+        fi
+        
+        # 改行で分かれている場合も検出
+        if echo "$screen" | grep -q "/help for help" && echo "$screen" | grep -q "for your current setup"; then
+            log_success "✅ President認証完了確認（ヘルプメッセージ分割表示）"
+            return 0
+        fi
+        
+        # その他の起動完了パターン
+        if echo "$screen" | grep -i -q "how can i help\|try \"edit\|tip:" && \
+           ! echo "$screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+            log_success "✅ President認証完了確認"
+            return 0
+        fi
+        
+        # プロンプトが表示されている状態
+        if echo "$screen" | grep -q "^>\|) \$\|~\$\|#\$" && \
+           ! echo "$screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+            log_success "✅ President認証完了確認（シェルプロンプト検出）"
+            return 0
+        fi
+        
+        # 認証が必要な場合 - 人間による手動認証を待機
+        if echo "$screen" | grep -q "Opening.*browser\|Please visit\|authenticate.*browser\|Preview\|console\.log"; then
+            log_delegator "⚠️ Presidentの認証が必要です - 手動で認証してください"
+            sleep 2
+        fi
+        
+        sleep 1
+        wait_count=$((wait_count + 1))
+        
+        if [ $((wait_count % 5)) -eq 0 ]; then
+            log_delegator "⏳ President認証待機中... ($wait_count/$max_wait 秒)"
+        fi
+    done
+    
+    log_error "❌ President認証タイムアウト"
+    return 1
+}
+
+# ペイン番号からペイン名を取得
+get_pane_name() {
+    local pane_num="$1"
+    case "$pane_num" in
+        0) echo "boss01" ;;
+        1) echo "worker-a01" ;;
+        2) echo "worker-b01" ;;
+        3) echo "worker-c01" ;;
+        4) echo "boss02" ;;
+        5) echo "worker-a02" ;;
+        6) echo "worker-b02" ;;
+        7) echo "worker-c02" ;;
+        8) echo "boss03" ;;
+        9) echo "worker-a03" ;;
+        10) echo "worker-b03" ;;
+        11) echo "worker-c03" ;;
+        12) echo "boss04" ;;
+        13) echo "worker-a04" ;;
+        14) echo "worker-b04" ;;
+        15) echo "worker-c04" ;;
+        16) echo "president" ;;
+        17) echo "auth-helper" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+# 認証代行可能なペインを自動検出（MCPと同じロジック使用）
+find_auth_helper_pane() {
+    
+    log_delegator "🔍 認証代行可能なペインを検索中..." >&2
+    
+    # 全ペインをチェック（0-17）してauthenticatedを探す
+    for i in {0..17}; do
+        # auth_helper.shのcheckコマンドを使用
+        local state=$("$AUTH_HELPER" check "$i" 2>/dev/null | grep -o "authenticated")
+        
+        if [ "$state" = "authenticated" ]; then
+            # 追加チェック：シェルプロンプト状態でないことを確認
+            local screen=$("$PANE_CONTROLLER" capture "$i" 2>/dev/null || echo "")
+            local last_lines=$(echo "$screen" | tail -3 | tr '[:upper:]' '[:lower:]')
+            
+            # 最下部がシェルプロンプトの場合はスキップ（MCPと同じロジック）
+            if echo "$last_lines" | grep -qE '.*[\$#]\s*$' && \
+               echo "$last_lines" | grep -qE 'org|worker|boss|president'; then
+                continue  # シェル状態なのでスキップ
+            fi
+            
+            log_delegator "✅ ペイン$i で認証済みClaude検出" >&2
+            echo "$i"
+            return 0
+        fi
+    done
+    
+    log_delegator "⚠️ 認証代行可能なペインが見つかりません" >&2
+    return 1
+}
+
+# Presidentに認証代行を依頼（スキップチェック付き）
+delegate_auth_to_president() {
+    local target_pane="$1"
+    local president_target="multiagent:0.16"
+    
+    log_delegator "🔧 DEBUG: delegate_auth_to_president called with args: $@"
+    log_delegator "🔧 DEBUG: target_pane='$target_pane'"
+    log_delegator "🤖 Presidentにペイン$target_pane の認証代行を依頼..."
+    
+    # 認証代行可能なペインを自動検出
+    local auth_helper_pane=$(find_auth_helper_pane)
+    if [ -z "$auth_helper_pane" ]; then
+        log_delegator "❌ 認証代行可能なペインが見つかりません"
+        return 1
+    fi
+    
+    local auth_helper_target="multiagent:0.$auth_helper_pane"
+    log_delegator "📋 認証代行ペイン: $auth_helper_pane を使用"
+    
+    # 対象ペインが既に認証完了かチェック
+    local target_session="multiagent:0.$target_pane"
+    local target_screen=$(tmux capture-pane -t "$target_session" -p -S - 2>/dev/null || echo "")
+    
+    # Claude Codeが既に起動完了している場合はスキップ
+    if echo "$target_screen" | grep -q "/help for help.*status.*current setup"; then
+        log_success "✅ ペイン$target_pane 既に認証完了 - 代行をスキップ"
+        return 0
+    fi
+    
+    if echo "$target_screen" | grep -q "/help for help" && echo "$target_screen" | grep -q "for your current setup"; then
+        log_success "✅ ペイン$target_pane 既に認証完了 - 代行をスキップ"
+        return 0
+    fi
+    
+    if echo "$target_screen" | grep -i -q "how can i help\|try \"edit\|tip:" && \
+       ! echo "$target_screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+        log_success "✅ ペイン$target_pane 既に認証完了 - 代行をスキップ"
+        return 0
+    fi
+    
+    # 認証専用ペインの存在確認
+    if ! tmux list-panes -t multiagent -F "#{pane_index}" | grep -q "^17$"; then
+        log_error "認証専用ペイン（17）が存在しません"
+        log_delegator "scripts/multiagent/add_auth_pane.sh add を実行してください"
+        return 1
+    fi
+    
+    # 対象ペインの認証URLを取得
+    log_delegator "🔍 ペイン$target_pane から認証URL抽出中..."
+    log_delegator "🔧 DEBUG: target_pane='$target_pane'"
+    local auth_url=$(detect_auth_url_from_pane "$target_pane")
+    
+    if [ -z "$auth_url" ]; then
+        log_delegator "❌ ペイン$target_pane からURL抽出失敗 - 認証代行を中止"
+        return 1
+    else
+        log_delegator "✅ ペイン$target_pane から動的URL抽出成功"
+    fi
+    
+    # 認証専用ペインの状態確認
+    local auth_helper_state=$("$AUTH_HELPER" check auth-helper 2>&1 || echo "not_started")
+    log_delegator "認証専用ペインの状態: $auth_helper_state"
+    
+    # シンプルな認証指示を送信
+    log_delegator "🤖 Auth-Helperに認証コード取得指示を送信..."
+    
+    local auth_instruction="$auth_url でPlaywright MCPを使って承認ボタンをクリックし、認証コードを取得してください。認証コードを取得したら、quick_send_with_verify.shを使ってペイン$target_pane ($(get_quick_send_target "$target_pane"))に認証コードを送信してください。送信後の操作は自動で処理されます。"
+    
+    if [ -f "$QUICK_SEND_SCRIPT" ]; then
+        local pane_name=$(get_pane_name "$auth_helper_pane")
+        log_delegator "🔍 デバッグ: auth_helper_pane='$auth_helper_pane', pane_name='$pane_name'"
+        "$QUICK_SEND_SCRIPT" "$pane_name" "$auth_instruction" --verify
+        log_delegator "✅ ペイン$auth_helper_pane ($pane_name) に認証代行指示送信完了"
+    else
+        # fallback: tmux send-keys直接送信（確実なEnter送信）
+        log_delegator "🔄 fallback: tmux直接送信でEnter確実実行"
+        
+        # プロンプトクリア
+        tmux send-keys -t "$auth_helper_target" C-c
+        sleep 0.5
+        
+        # メッセージ送信
+        tmux send-keys -t "$auth_helper_target" "$auth_instruction"
+        sleep 0.5
+        
+        # Enter確実送信
+        tmux send-keys -t "$auth_helper_target" C-m
+        sleep 0.3
+        
+        # 送信確認のため再度Enter（念のため）
+        tmux send-keys -t "$auth_helper_target" C-m
+        
+        log_delegator "✅ Auth-HelperにAgent自律認証指示送信完了（fallback）"
+    fi
+    
+    # 認証完了を確認
+    log_delegator "⏳ 認証代行完了を待機中..."
+    
+    # 対象ペインの認証完了を確認
+    local target_session="multiagent:0.$target_pane"
+    local auth_success=false
+    local check_count=0
+    local max_wait=120  # 120秒まで待機
+    
+    # 段階的監視システム
+    local phase=1
+    local agent_reported=false
+    local auth_code_sent=false
+    
+    while [ $check_count -lt $max_wait ]; do
+        local target_screen=$(tmux capture-pane -t "$target_session" -p -S - 2>/dev/null || echo "")
+        local president_screen=$(tmux capture-pane -t "$president_target" -p -S - 2>/dev/null || echo "")
+        
+        # Phase 1: Agent認証実行中 (0-60秒)
+        if [ $phase -eq 1 ] && [ $check_count -le 60 ]; then
+            # 認証方法選択画面が表示された場合、Enterを送信して新しいURLを生成
+            if echo "$target_screen" | grep -q "Select login method.*Claude account with subscription"; then
+                log_delegator "✅ Phase 1: 認証方法選択画面検出 - Enter送信でURL生成"
+                tmux send-keys -t "$target_session" C-m
+                sleep 2
+                # 新しいURLを取得してPresidentに送信（detect_auth_url_from_pane関数を使用）
+                local new_auth_url=$(detect_auth_url_from_pane "$target_pane" 3)
+                if [ -n "$new_auth_url" ] && [ "$new_auth_url" != "https://claude.ai/auth" ]; then
+                    log_delegator "✅ Phase 1: 新しいURL検出 - Presidentに更新指示送信"
+                    if [ -f "$QUICK_SEND_SCRIPT" ]; then
+                        "$QUICK_SEND_SCRIPT" "president" "新しい認証URLが生成されました。このURLで認証コードを取得してください: $new_auth_url" --no-verify
+                    fi
+                fi
+            fi
+            
+            # 対象ペインに認証コードが到着した（画面変化）した場合は Phase 2 へ
+            # ただし、テーマ選択画面（Choose the text style）は除外
+            if echo "$target_screen" | grep -q "Press Enter to continue\|Press Enter to retry\|Security notes\|Use Claude Code's terminal setup\|dangerous.*mode\|No, exit.*Yes, I accept\|Login successful\|Logged in as\|OAuth error"; then
+                log_delegator "✅ Phase 1: 対象ペインに認証コード到着検出 - Phase 2へ移行"
+                phase=2
+                auth_code_sent=true
+            fi
+            
+            # 10秒毎に進捗表示
+            if [ $((check_count % 10)) -eq 0 ]; then
+                log_delegator "⏳ Phase 1: Agent認証実行中... ($check_count/60 秒)"
+            fi
+            
+        # Phase 2: 認証コード送信・処理中 (60-90秒または認証完了報告後)
+        elif [ $phase -eq 2 ] || ([ $phase -eq 1 ] && [ $check_count -gt 60 ]); then
+            phase=2
+            
+
+            
+            # 対象ペインの認証後操作を処理
+            if echo "$target_screen" | grep -q "No, exit.*Yes, I accept\|Yes, I accept.*No, exit" || \
+               (echo "$target_screen" | grep -q "dangerous" && echo "$target_screen" | grep -q "Yes, I accept"); then
+                log_delegator "🔑 Phase 2: Bypass Permissions同意画面検出 - Down + Enter実行"
+                tmux send-keys -t "$target_session" Down
+                sleep 0.1
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.5
+                
+            elif echo "$target_screen" | grep -q "Press Enter to continue\|Press Enter to retry\|Security notes\|Login successful\|Logged in as\|OAuth error"; then
+                log_delegator "🔑 Phase 2: 続行画面検出 - Enter実行"
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.5
+                
+            elif echo "$target_screen" | grep -q "Use Claude Code's terminal setup\|terminal.*setup\|Shift.*Enter"; then
+                log_delegator "🔑 Phase 2: Terminal設定画面検出 - Yes選択（Enter実行）"
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.5
+                
+            elif echo "$target_screen" | grep -q "Preview.*console\.log\|Preview.*Dark mode\|Preview.*Light mode"; then
+                log_delegator "🔑 Phase 2: Preview画面検出 - テーマ選択スキップ（Enter×2）"
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.1
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.5
+            elif echo "$target_screen" | grep -q "Choose the text style\|Welcome to Claude Code.*Let's get started"; then
+                log_delegator "🔑 Phase 2: テーマ選択画面検出 - スキップ（Enter×2）"
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.1
+                tmux send-keys -t "$target_session" C-m
+                sleep 0.5
+            fi
+            
+            # 最終起動完了状態をチェックしてPhase 3へ移行
+            if echo "$target_screen" | grep -q "/help for help.*status.*current setup" || \
+               (echo "$target_screen" | grep -q "/help for help" && echo "$target_screen" | grep -q "for your current setup") || \
+               (echo "$target_screen" | grep -i -q "how can i help\|try \"edit\|tip:" && ! echo "$target_screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"); then
+                log_delegator "✅ Phase 2: Claude Code起動完了検出 - Phase 3へ移行"
+                phase=3
+            fi
+            
+            # 5秒毎に進捗表示
+            if [ $((check_count % 5)) -eq 0 ]; then
+                log_delegator "⏳ Phase 2: 認証コード処理中... ($check_count/$max_wait 秒)"
+            fi
+            
+        # Phase 3: Claude Code起動完了監視 (90秒以降または中間認証検出後)
+        else
+            phase=3
+            
+            # 最終的なClaude Code起動完了状態を監視（人間認証と同じロジック）
+            if echo "$target_screen" | grep -q "/help for help.*status.*current setup"; then
+                log_success "✅ Phase 3: Claude Code起動完了確認（ヘルプメッセージ表示）"
+                auth_success=true
+                break
+            fi
+            
+            # 改行で分かれている場合も検出
+            if echo "$target_screen" | grep -q "/help for help" && echo "$target_screen" | grep -q "for your current setup"; then
+                log_success "✅ Phase 3: Claude Code起動完了確認（ヘルプメッセージ分割表示）"
+                auth_success=true
+                break
+            fi
+            
+            # その他の起動完了パターン
+            if echo "$target_screen" | grep -i -q "how can i help\|try \"edit\|tip:" && \
+               ! echo "$target_screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+                log_success "✅ Phase 3: Claude Code起動完了確認"
+                auth_success=true
+                break
+            fi
+            
+            # プロンプトが表示されている状態
+            if echo "$target_screen" | grep -q "^>\|) \$\|~\$\|#\$" && \
+               ! echo "$target_screen" | grep -q "Preview\|console\.log\|Press Enter to continue\|Use Claude Code's terminal setup"; then
+                log_success "✅ Phase 3: Claude Code起動完了確認（シェルプロンプト検出）"
+                auth_success=true
+                break
+            fi
+            
+            # 2秒毎に進捗表示
+            if [ $((check_count % 2)) -eq 0 ]; then
+                log_delegator "⏳ Phase 3: Claude Code起動完了監視中... ($check_count/$max_wait 秒)"
+            fi
+        fi
+        
+        sleep 1
+        check_count=$((check_count + 1))
+    done
+    
+    if [ "$auth_success" = true ]; then
+        log_success "🎉 ペイン$target_pane 認証代行完了！（Phase $phase で完了）"
+        return 0
+    else
+        log_error "❌ ペイン$target_pane の認証代行失敗（120秒タイムアウト）"
+        return 1
+    fi
+}
+
+# 対象ペイン状態確認機能（画面変化ベース）
+check_target_pane_progress() {
+    local target_pane="$1"
+    local target_session="multiagent:0.$target_pane"
+    
+    log_delegator "🔍 対象ペイン$target_pane の状態確認..."
+    
+    # 対象ペインの現在状態をチェック
+    local target_screen=$(tmux capture-pane -t "$target_session" -p -S - 2>/dev/null || echo "")
+    
+    # 認証コード処理中または完了状態
+    if echo "$target_screen" | grep -q "Press Enter to continue\|Security notes\|dangerous.*mode\|Use Claude Code's terminal setup\|How can I help\|/help for help\|Welcome to Claude"; then
+        log_delegator "✅ 対象ペインで認証進行中または完了を確認"
+        return 0
+    fi
+    
+    return 1
+}
+
+# ペイン番号→quick_send_target変換
+get_quick_send_target() {
+    local pane="$1"
+    case $pane in
+        0) echo "boss01" ;;
+        1) echo "worker-a01" ;;
+        2) echo "worker-b01" ;;
+        3) echo "worker-c01" ;;
+        4) echo "boss02" ;;
+        5) echo "worker-a02" ;;
+        6) echo "worker-b02" ;;
+        7) echo "worker-c02" ;;
+        8) echo "boss03" ;;
+        9) echo "worker-a03" ;;
+        10) echo "worker-b03" ;;
+        11) echo "worker-c03" ;;
+        12) echo "boss04" ;;
+        13) echo "worker-a04" ;;
+        14) echo "worker-b04" ;;
+        15) echo "worker-c04" ;;
+        16) echo "president" ;;
+        17) echo "auth-helper" ;;
+        *) echo "" ;;
+    esac
+}
+
+# URL検出機能（tmux画面から認証URLを抽出）
+detect_auth_url_from_pane() {
+    local target_pane="$1"
+    local target_session="multiagent:0.$target_pane"
+    local max_wait="${2:-10}"
+    
+    log_delegator "🔍 ペイン$target_pane からURLを検出中..." >&2
+    log_delegator "🔧 DEBUG: target_session='$target_session'" >&2
+    
+    local wait_count=0
+    while [ $wait_count -lt $max_wait ]; do
+        # より広い範囲でスクリーンキャプチャ（複数行対応）
+        local screen=$(tmux capture-pane -t "$target_session" -p -S -30 2>/dev/null || echo "")
+        log_delegator "🔧 DEBUG: screen_length=$(echo "$screen" | wc -l) lines" >&2
+        
+        # より広範囲でURLを検索（認証メッセージがない場合も含む）
+        local auth_url=$(echo "$screen" | tr -d '\n' | grep -oE 'https://[^[:space:]"'\'']+' | grep -E 'claude\.ai.*oauth|anthropic\.com.*oauth' | head -1)
+        log_delegator "🔧 DEBUG: auth_url='$auth_url'" >&2
+        
+        # 履歴検索は無効化（古いURLを回避するため）
+        # リアルタイム画面検索のみを使用
+        
+        # URLパターンが発見された場合
+        if [ -n "$auth_url" ] || echo "$screen" | grep -q "Browser didn't open\|use the url below\|authenticate.*browser\|Please visit"; then
+            log_delegator "🔧 DEBUG: URL pattern detected condition met" >&2
+            # oauth URLが見つからない場合は、通常のauth URLを探す
+            if [ -z "$auth_url" ]; then
+                auth_url=$(echo "$screen" | tr -d '\n' | grep -oE 'https://[^[:space:]"'\'']+' | grep -E 'claude\.ai|anthropic\.com' | head -1)
+                log_delegator "🔧 DEBUG: fallback auth_url='$auth_url'" >&2
+            fi
+            
+            if [ -n "$auth_url" ]; then
+                log_delegator "✅ ペイン$target_pane からURL抽出成功: $auth_url" >&2
+                echo "$auth_url"
+                return 0
+            fi
+        fi
+        
+        sleep 1
+        wait_count=$((wait_count + 1))
+    done
+    
+    log_delegator "❌ ペイン$target_pane からURL抽出失敗" >&2
+    return 1
+}
+
+# 使用例とヘルプ
+show_usage() {
+    echo "President認証代行システム"
+    echo ""
+    echo "使用法:"
+    echo "  $0 check                           # President認証状態確認"
+    echo "  $0 auto-approve                    # President自律認証依頼"
+    echo "  $0 delegate <pane_num> [auth_url]  # 認証代行実行"
+    echo "  $0 detect <pane_num>               # URL検出"
+    echo ""
+    echo "例:"
+    echo "  $0 check                           # President認証確認"
+    echo "  $0 auto-approve                    # President自律認証依頼実行"
+    echo "  $0 delegate 0                      # ペイン0の認証をPresidentに代行依頼"
+    echo "  $0 delegate 5 https://claude.ai/auth  # 特定URLで認証代行"
+    echo "  $0 detect 3                        # ペイン3からURL検出"
+}
+
+# メイン処理
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    case "${1:-}" in
+        "check")
+            check_president_authenticated "$2"
+            ;;
+        "auto-approve")
+            request_president_auto_auth
+            ;;
+        "delegate")
+            if [ -z "$2" ]; then
+                echo "エラー: ペイン番号が必要です"
+                show_usage
+                exit 1
+            fi
+            delegate_auth_to_president "$2" "$3"
+            ;;
+        "detect")
+            if [ -z "$2" ]; then
+                echo "エラー: ペイン番号が必要です"
+                show_usage
+                exit 1
+            fi
+            detect_auth_url_from_pane "$2" "$3"
+            ;;
+        "help"|"-h"|"--help")
+            show_usage
+            ;;
+        *)
+            echo "エラー: 不明なコマンド '$1'"
+            show_usage
+            exit 1
+            ;;
+    esac
+fi

@@ -1,0 +1,59 @@
+{
+  "name": "standard-project",
+  "description": "標準4組織プロジェクトテンプレート",
+  "requiredPanes": 18,
+  "layout": "standard-18pane",
+  "structure": {
+    "directories": [
+      "modules/auth",
+      "modules/api", 
+      "modules/database",
+      "modules/frontend",
+      "tests/unit",
+      "tests/integration",
+      "docs/api",
+      "docs/deployment"
+    ],
+    "files": [
+      "README.md",
+      "package.json",
+      "docker-compose.yml",
+      ".env.example"
+    ]
+  },
+  "organizations": {
+    "org-01": {
+      "name": "認証システム",
+      "agentType": "claude",
+      "focus": "ユーザー認証・認可システム開発",
+      "deliverables": ["認証API", "ユーザー管理", "セキュリティ機能"]
+    },
+    "org-02": {
+      "name": "API開発",
+      "agentType": "claude", 
+      "focus": "REST API・GraphQL エンドポイント開発",
+      "deliverables": ["APIエンドポイント", "ドキュメント", "バリデーション"]
+    },
+    "org-03": {
+      "name": "データベース",
+      "agentType": "claude",
+      "focus": "データベース設計・最適化",
+      "deliverables": ["スキーマ設計", "マイグレーション", "クエリ最適化"]
+    },
+    "org-04": {
+      "name": "画像生成・UI",
+      "agentType": "gemini",
+      "focus": "画像生成・視覚的UI設計",
+      "deliverables": ["画像生成機能", "UIコンポーネント", "デザインシステム"]
+    }
+  },
+  "workflow": {
+    "phases": [
+      "要件定義・設計",
+      "並行開発実装", 
+      "統合・テスト",
+      "最終調整・デプロイ"
+    ],
+    "coordination": "President統括、各Boss調整、Worker並行実装"
+  }
+}

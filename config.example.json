@@ -1,0 +1,5 @@
+{
+  "projectDir": "/path/to/your/project",
+  "sessionName": "multiagent",
+  "scriptDir": "scripts/agent_tools"
+}

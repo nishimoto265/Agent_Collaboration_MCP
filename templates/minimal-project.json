@@ -1,0 +1,44 @@
+{
+  "name": "minimal-project",
+  "description": "最小構成プロジェクトテンプレート",
+  "requiredPanes": 6,
+  "layout": "minimal-8pane",
+  "structure": {
+    "directories": [
+      "src",
+      "tests",
+      "docs"
+    ],
+    "files": [
+      "README.md",
+      "package.json",
+      ".gitignore"
+    ]
+  },
+  "agents": {
+    "boss01": {
+      "role": "統括管理",
+      "tasks": ["要件定義", "品質管理", "Worker調整"]
+    },
+    "worker-a01": {
+      "role": "コア実装",
+      "tasks": ["主要機能実装", "アーキテクチャ設計"]
+    },
+    "worker-b01": {
+      "role": "テスト実装", 
+      "tasks": ["テストケース作成", "品質保証"]
+    },
+    "worker-c01": {
+      "role": "ドキュメント作成",
+      "tasks": ["API文書", "使用方法説明"]
+    },
+    "president": {
+      "role": "プロジェクト統括",
+      "tasks": ["全体調整", "最終判断"]
+    },
+    "auth-helper": {
+      "role": "認証サポート",
+      "tasks": ["認証管理", "セキュリティ確保"]
+    }
+  }
+}

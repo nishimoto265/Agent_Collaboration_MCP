@@ -1,0 +1,66 @@
+{
+  "name": "agent-collaboration-mcp",
+  "version": "3.0.0",
+  "description": "Self-contained MCP server for multi-agent collaboration with automatic authentication delegation and complete tmux session management - no external dependencies required",
+  "main": "index.js",
+  "bin": {
+    "agent-collaboration-mcp": "./bin/mcp-server-agent-collaboration"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test/test-pane-config.js",
+    "setup": "node setup/setup-wizard.js",
+    "validate-config": "node src/tools/paneConfigManager.js"
+  },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "gemini",
+    "agent",
+    "tmux",
+    "collaboration",
+    "automation",
+    "multi-agent",
+    "ai",
+    "dynamic-panes",
+    "tmux-automation",
+    "pane-management",
+    "agent-management",
+    "self-contained",
+    "authentication-delegation",
+    "playwright-integration"
+  ],
+  "author": "Agent Collaboration Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent-collaboration/agent-collaboration-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agent-collaboration/agent-collaboration-mcp/issues"
+  },
+  "homepage": "https://github.com/agent-collaboration/agent-collaboration-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.2",
+    "zod": "^3.24.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "bin/",
+    "scripts/",
+    "README.md",
+    "README_en.md",
+    "config.example.json",
+    "pane_config.json",
+    "setup/",
+    "templates/"
+  ],
+  "devDependencies": {},
+  "preferGlobal": true,
+  "os": ["linux", "darwin"],
+  "cpu": ["x64", "arm64"]
+}
