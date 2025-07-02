@@ -1,4 +1,4 @@
-# Agent Collaboration MCP Server v3.0 (配布用完全版)
+# Agent Collaboration MCP Server
 
 [English version is here](README_en.md)
 
@@ -17,14 +17,12 @@ npm install
 npm start
 ```
 
-## ✨ v3.0の特徴：完全自己完結型
+## ✨ 特徴
 
-この配布用完全版の特徴：
-- **外部依存完全除去**: 必要なスクリプトをすべて内蔵、単一パッケージで完全動作
-- **自動認証代行システム**: Playwright MCPを使った完全自動認証システム
-- **即座にデプロイ**: どこでも動作する移植可能なパッケージ
-- **高度な状態管理**: 精密なエージェント状態検出・認証状態自動判別
-- **配布最適化**: npm publish対応、グローバルインストール可能
+- **シンプルなアーキテクチャ**: ペイン番号を直接指定する直感的な操作
+- **複数エージェント対応**: Claude CodeとGeminiの同時制御
+- **柔軟なセッション管理**: 複数プロジェクトの並行作業に対応
+- **高度な状態管理**: エージェントの実行状態をリアルタイムで監視
 
 ## 🎯 エージェント同士の協調作業
 
@@ -84,23 +82,36 @@ capture_screen(target="multiagent:0.3", lines=50) // 最後の50行
 
 ## 📦 インストール・設定
 
-### 完全自己完結型のインストール
+### 1. インストール方法
 
-1. **このディレクトリをコピー**するだけ！
+**npm経由（推奨）**:
 ```bash
-# 任意の場所にコピー
-cp -r /path/to/agent-collaboration-mcp /your/target/directory/
-cd /your/target/directory/agent-collaboration-mcp
+npm install -g agent-collaboration-mcp
+```
+
+**ローカルインストール**:
+```bash
+git clone [repository-url]
+cd agent-collaboration-mcp
 npm install
 ```
 
-2. **Claude Codeで設定**
-```bash
-# MCPサーバーとして登録
-claude mcp add agent-collaboration node /path/to/agent-collaboration-mcp/index.js
+### 2. Claude Codeへの設定
+
+`.claude.json`に以下を追加：
+
+```json
+{
+  "mcpServers": {
+    "agent-collaboration": {
+      "command": "npx",
+      "args": ["agent-collaboration-mcp"]
+    }
+  }
+}
 ```
 
-または `.claude.json`に追加：
+ローカルインストールの場合：
 ```json
 {
   "mcpServers": {
@@ -112,20 +123,15 @@ claude mcp add agent-collaboration node /path/to/agent-collaboration-mcp/index.j
 }
 ```
 
-### 内蔵スクリプト
+### 3. tmuxセッションの準備
 
-このMCPサーバーには以下のスクリプトが内蔵されています（外部依存なし）：
+```bash
+# デフォルトセッション（multiagent）を作成
+tmux new-session -d -s multiagent
 
-```
-scripts/
-├── agent_tools/
-│   ├── agent_manager.sh      # エージェント起動・状態管理
-│   ├── auth_helper.sh        # 認証状態確認・認証プロセス支援
-│   └── pane_controller.sh    # tmuxペイン制御
-├── utilities/
-│   └── president_auth_delegator.sh  # 認証代行システム
-└── multiagent/
-    └── quick_send_with_verify.sh    # 高度なメッセージ送信
+# 複数プロジェクトの場合
+tmux new-session -d -s project1
+tmux new-session -d -s project2
 ```
 
 ## 💡 使用例
@@ -147,17 +153,15 @@ send_message(target="multiagent:0.3", message="テストを実行してくださ
 capture_screen(target="multiagent:0.3")
 ```
 
-### 自動認証代行の動作例
+### 複数セッションでの作業例
 ```javascript
-// 新しいエージェントを起動
-start_agent(target="multiagent:0.5", agentType="claude")
+// プロジェクト1での作業
+start_agent(target="project1:0.0", agentType="claude")
+send_message(target="project1:0.0", message="バックエンドAPIを実装してください")
 
-// 認証が必要な場合、自動で以下が実行される：
-// 1. 既存の認証済みエージェント（例：multiagent:0.2）を検出
-// 2. 新エージェント（multiagent:0.5）の認証URLを抽出
-// 3. 認証済みエージェントにPlaywright MCPを使った認証指示を送信
-// 4. 認証コードの自動取得・送信
-// 5. 起動完了まで自動監視
+// プロジェクト2での並行作業
+start_agent(target="project2:0.0", agentType="gemini")
+send_message(target="project2:0.0", message="UIデザインを作成してください")
 ```
 
 ### マルチエージェント協調の例
@@ -194,21 +198,15 @@ send_message(target="multiagent:0.2", message="C-l", sendEnter=false)
 
 ## 🚀 高度な機能
 
-### 認証代行システム
-- **自動URL検出**: 新しいエージェントの認証URLを自動抽出
-- **Playwright MCP連携**: ブラウザ自動操作による認証コード取得
-- **自動送信**: 取得した認証コードの自動送信
-- **Phase監視**: 3段階の認証プロセスを自動監視
+### 柔軟なターゲット指定
+- **セッション指定**: 異なるプロジェクトで並行作業
+- **ワイルドカード**: `multiagent:*`で全ペインを対象に
+- **直感的な番号指定**: `0`, `1`, `2`...のシンプルな指定
 
 ### 精密な状態検出
-- **シェル状態の正確な判定**: 認証画面の残骸と実際の状態を区別
-- **リアルタイム状態更新**: 画面内容からの動的状態判定
-- **アイコン付き表示**: 直感的な状態表示
-
-### 高度なメッセージ送信
-- **送信確認機能**: メッセージの受信確認
-- **制御文字対応**: Ctrl+C, Ctrl+L等の制御文字送信
-- **Claude Code対応**: 改行除去・確実なメッセージ送信
+- **リアルタイム監視**: エージェントの実行状態を即座に判定
+- **複数状態の識別**: 実行中、認証中、停止中などを正確に判別
+- **アイコン付き表示**: 視覚的に分かりやすい状態表示
 
 ## 🚨 トラブルシューティング
 
@@ -223,51 +221,18 @@ tmux new-session -d -s multiagent
 - `capture_screen()`でエラーメッセージを確認
 - 認証代行システムが自動で問題を解決する場合が多い
 
-### 認証代行が動作しない
-- 既存の認証済みエージェントが存在するか確認
-- Playwright MCPが利用可能か確認
-- `capture_screen()`で認証画面の状態を確認
+### メッセージが送信されない
+- エージェントが起動中か`get_agent_status()`で確認
+- tmuxセッションが存在するか確認
+- ターゲット形式が正しいか確認（"session:window.pane"）
 
-## 📦 配布・インストール
+## 📄 スクリプトのカスタマイズ
 
-### Claude Codeでの使用
+本MCPサーバーは`scripts/agent_tools/`内のスクリプトを使用します。独自のエージェント起動方法やメッセージ送信方法がある場合は、これらのスクリプトをカスタマイズしてください：
 
-1. **MCPサーバーとして設定**：
-```json
-// .claude.json に追加
-{
-  "agent-collaboration": {
-    "command": "npx",
-    "args": ["agent-collaboration-mcp"]
-  }
-}
-```
+- `agent_manager.sh`: エージェント起動コマンドの定義
+- `pane_controller.sh`: メッセージ送信方法の定義
 
-2. **ローカルインストール**：
-```bash
-npm install agent-collaboration-mcp
-# または
-npm link agent-collaboration-mcp  # グローバルインストール後
-```
-
-### 独立使用
-
-```bash
-# ダウンロード・展開後
-cd agent-collaboration-mcp
-npm install
-node index.js  # MCPサーバー起動
-```
-
-## 🎯 設計思想
-
-この配布用完全版MCPサーバーは、以下の思想で設計されています：
-
-1. **完全自己完結**: 外部ファイルへの依存を完全排除、単一パッケージで完全動作
-2. **高度な自動化**: 認証代行システムによる人間の介入最小化
-3. **協調作業の促進**: エージェント間の自然な協調とタスク分散を支援
-4. **移植性の確保**: どこでも同じように動作する配布可能パッケージ
-5. **配布最適化**: npm ecosystem対応、簡単インストール・即座使用開始
 
 ## 🤝 貢献
 

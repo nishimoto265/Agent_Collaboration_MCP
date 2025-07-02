@@ -1,16 +1,15 @@
-# Agent Collaboration MCP Server (Self-Contained Edition)
+# Agent Collaboration MCP Server
 
 [日本語版はこちら](README.md)
 
 A **completely self-contained** MCP server that enables AI agents to collaborate with each other. By giving this tool to agents like Claude Code, they can start and control other agents, allowing teams of agents to work together on complex tasks.
 
-## ✨ New Features: Complete Self-Containment
+## ✨ Features
 
-Features of this integrated version:
-- **No External Dependencies**: All required scripts are built-in
-- **Automatic Authentication Delegation**: Fully automated authentication system using Playwright MCP
-- **Instant Deployment**: Complete operation with a single directory
-- **Advanced State Management**: Precise agent state detection
+- **Simple Architecture**: Intuitive operation using direct pane numbers
+- **Multi-Agent Support**: Control Claude Code and Gemini simultaneously
+- **Flexible Session Management**: Support for parallel work on multiple projects
+- **Advanced State Management**: Real-time monitoring of agent execution states
 
 ## 🎯 Agent-to-Agent Collaboration
 
@@ -70,23 +69,36 @@ Capture screen content from panes.
 
 ## 📦 Installation & Setup
 
-### Self-Contained Installation
+### 1. Installation Methods
 
-1. **Simply copy this directory!**
+**Via npm (Recommended)**:
 ```bash
-# Copy to any location
-cp -r /path/to/agent-collaboration-mcp /your/target/directory/
-cd /your/target/directory/agent-collaboration-mcp
+npm install -g agent-collaboration-mcp
+```
+
+**Local Installation**:
+```bash
+git clone [repository-url]
+cd agent-collaboration-mcp
 npm install
 ```
 
-2. **Configure with Claude Code**
-```bash
-# Register as MCP server
-claude mcp add agent-collaboration node /path/to/agent-collaboration-mcp/index.js
+### 2. Configure with Claude Code
+
+Add to `.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "agent-collaboration": {
+      "command": "npx",
+      "args": ["agent-collaboration-mcp"]
+    }
+  }
+}
 ```
 
-Or add to `.claude.json`:
+For local installation:
 ```json
 {
   "mcpServers": {
@@ -98,20 +110,15 @@ Or add to `.claude.json`:
 }
 ```
 
-### Built-in Scripts
+### 3. Prepare tmux Sessions
 
-This MCP server includes the following built-in scripts (no external dependencies):
+```bash
+# Create default session (multiagent)
+tmux new-session -d -s multiagent
 
-```
-scripts/
-├── agent_tools/
-│   ├── agent_manager.sh      # Agent startup and state management
-│   ├── auth_helper.sh        # Authentication state checking and process support
-│   └── pane_controller.sh    # tmux pane control
-├── utilities/
-│   └── president_auth_delegator.sh  # Authentication delegation system
-└── multiagent/
-    └── quick_send_with_verify.sh    # Advanced message sending
+# For multiple projects
+tmux new-session -d -s project1
+tmux new-session -d -s project2
 ```
 
 ## 💡 Usage Examples
@@ -133,17 +140,15 @@ send_message(target="multiagent:0.3", message="Run the tests")
 capture_screen(target="multiagent:0.3")
 ```
 
-### Automatic Authentication Delegation Example
+### Working with Multiple Sessions
 ```javascript
-// Start a new agent
-start_agent(target="multiagent:0.5", agentType="claude")
+// Work on Project 1
+start_agent(target="project1:0.0", agentType="claude")
+send_message(target="project1:0.0", message="Implement the backend API")
 
-// When authentication is required, the following happens automatically:
-// 1. Detect existing authenticated agents (e.g., multiagent:0.2)
-// 2. Extract authentication URL from new agent (multiagent:0.5)
-// 3. Send Playwright MCP authentication instructions to authenticated agent
-// 4. Automatic authentication code acquisition and sending
-// 5. Automatic monitoring until startup completion
+// Parallel work on Project 2
+start_agent(target="project2:0.0", agentType="gemini")
+send_message(target="project2:0.0", message="Create UI designs")
 ```
 
 ### Multi-Agent Collaboration Example
@@ -180,21 +185,15 @@ send_message(target="multiagent:0.2", message="C-l", sendEnter=false)
 
 ## 🚀 Advanced Features
 
-### Authentication Delegation System
-- **Automatic URL Detection**: Automatically extract authentication URLs from new agents
-- **Playwright MCP Integration**: Browser automation for authentication code acquisition
-- **Automatic Sending**: Automated sending of acquired authentication codes
-- **Phase Monitoring**: Automatic monitoring of 3-stage authentication process
+### Flexible Target Specification
+- **Session Specification**: Work in parallel on different projects
+- **Wildcards**: Target all panes with `multiagent:*`
+- **Intuitive Numbering**: Simple specification with `0`, `1`, `2`...
 
 ### Precise State Detection
-- **Accurate Shell State Judgment**: Distinguish between authentication screen remnants and actual state
-- **Real-time State Updates**: Dynamic state determination from screen content
-- **Icon Display**: Intuitive state representation
-
-### Advanced Message Sending
-- **Send Confirmation**: Message reception confirmation
-- **Control Character Support**: Support for Ctrl+C, Ctrl+L, etc.
-- **Claude Code Compatibility**: Line break removal and reliable message sending
+- **Real-time Monitoring**: Instantly determine agent execution states
+- **Multiple State Recognition**: Accurately distinguish between running, authenticating, stopped, etc.
+- **Icon Display**: Visually clear state representation
 
 ## 🚨 Troubleshooting
 
@@ -209,20 +208,17 @@ tmux new-session -d -s multiagent
 - Check error messages with `capture_screen()`
 - Authentication delegation system often resolves issues automatically
 
-### Authentication delegation not working
-- Check if existing authenticated agents exist
-- Verify Playwright MCP availability
-- Check authentication screen state with `capture_screen()`
+### Messages not being sent
+- Check if agent is running with `get_agent_status()`
+- Verify tmux session exists
+- Check target format is correct ("session:window.pane")
 
-## 🎯 Design Philosophy
+## 📄 Script Customization
 
-This integrated MCP server is designed with the following principles:
+This MCP server uses scripts in `scripts/agent_tools/`. If you have custom agent startup methods or message sending methods, customize these scripts:
 
-1. **Complete Self-Containment**: Eliminate dependencies on external files
-2. **Advanced Automation**: Minimize human intervention
-3. **Collaboration Promotion**: Support natural collaboration between agents
-4. **Scalability**: Stable simultaneous operation with multiple agents
-5. **Deployment Simplification**: Complete operation with single directory
+- `agent_manager.sh`: Define agent startup commands
+- `pane_controller.sh`: Define message sending methods
 
 ## 🤝 Contributing
 
