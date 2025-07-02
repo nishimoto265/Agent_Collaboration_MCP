@@ -67,26 +67,32 @@ capture_screen(target="multiagent:0.3", lines=50) // Last 50 lines
 ```
 Capture screen content from panes.
 
-## 📦 Installation & Setup
+## 📦 Setup
 
-### 1. Installation Methods
+### 1. Installation
 
 **Via npm (Recommended)**:
 ```bash
 npm install -g agent-collaboration-mcp
 ```
 
-**Local Installation**:
+**From GitHub**:
 ```bash
-git clone [repository-url]
-cd agent-collaboration-mcp
+git clone https://github.com/nishimoto265/Agent_Collaboration_MCP.git
+cd Agent_Collaboration_MCP
 npm install
 ```
 
-### 2. Configure with Claude Code
+### 2. Add to Claude Code
 
-Add to `.claude.json`:
+**Simple method (using CLI)**:
+```bash
+claude mcp add agent-collaboration npx agent-collaboration-mcp
+```
 
+**Or, using JSON configuration**:
+
+1. Create `.mcp.json` in your project root:
 ```json
 {
   "mcpServers": {
@@ -98,13 +104,13 @@ Add to `.claude.json`:
 }
 ```
 
-For local installation:
+2. For local installation:
 ```json
 {
   "mcpServers": {
     "agent-collaboration": {
       "command": "node",
-      "args": ["/path/to/agent-collaboration-mcp/index.js"]
+      "args": ["/absolute/path/to/Agent_Collaboration_MCP/index.js"]
     }
   }
 }
@@ -125,7 +131,7 @@ tmux new-session -d -s project2
 
 ### Basic Usage
 ```javascript
-// 1. Start agents (with automatic authentication)
+// 1. Start agents
 start_agent(target="multiagent:0.2", agentType="claude")
 start_agent(target="multiagent:0.3", agentType="claude")
 
@@ -233,7 +239,7 @@ tmux new-session -d -s multiagent
 
 ## 📄 Script Customization
 
-This MCP server uses scripts in `scripts/agent_tools/`. If you have custom agent startup methods or message sending methods, customize these scripts:
+Agent Collaboration MCP uses scripts in `scripts/agent_tools/`. If you have custom agent startup methods or message sending methods, customize these scripts:
 
 - `agent_manager.sh`: Define agent startup commands
 - `pane_controller.sh`: Define message sending methods

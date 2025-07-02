@@ -4,18 +4,6 @@
 
 複数のAIエージェントが協調して作業できるようにする**完全自己完結型**MCPサーバーです。このツールをClaude Codeなどのエージェントに使わせることで、エージェントが他のエージェントを起動・制御し、チームとして複雑なタスクを実行できます。
 
-## 🚀 簡単インストール・即座に使用開始
-
-```bash
-# npm経由でグローバルインストール
-npm install -g agent-collaboration-mcp
-
-# または、ローカルで直接使用
-git clone [repository-url]
-cd agent-collaboration-mcp
-npm install
-npm start
-```
 
 ## ✨ 特徴
 
@@ -80,26 +68,32 @@ capture_screen(target="multiagent:0.3", lines=50) // 最後の50行
 ```
 ペインの画面内容を取得します。
 
-## 📦 インストール・設定
+## 📦 セットアップ
 
-### 1. インストール方法
+### 1. インストール
 
 **npm経由（推奨）**:
 ```bash
 npm install -g agent-collaboration-mcp
 ```
 
-**ローカルインストール**:
+**GitHubから直接**:
 ```bash
-git clone [repository-url]
-cd agent-collaboration-mcp
+git clone https://github.com/nishimoto265/Agent_Collaboration_MCP.git
+cd Agent_Collaboration_MCP
 npm install
 ```
 
-### 2. Claude Codeへの設定
+### 2. Claude Codeへの追加
 
-`.claude.json`に以下を追加：
+**簡単な方法（CLIを使用）**:
+```bash
+claude mcp add agent-collaboration npx agent-collaboration-mcp
+```
 
+**または、JSON設定を使用**:
+
+1. プロジェクトルートに`.mcp.json`を作成：
 ```json
 {
   "mcpServers": {
@@ -111,13 +105,13 @@ npm install
 }
 ```
 
-ローカルインストールの場合：
+2. ローカルインストールの場合：
 ```json
 {
   "mcpServers": {
     "agent-collaboration": {
       "command": "node",
-      "args": ["/path/to/agent-collaboration-mcp/index.js"]
+      "args": ["/absolute/path/to/Agent_Collaboration_MCP/index.js"]
     }
   }
 }
@@ -138,7 +132,7 @@ tmux new-session -d -s project2
 
 ### 基本的な使い方
 ```javascript
-// 1. エージェントを起動（自動認証付き）
+// 1. エージェントを起動
 start_agent(target="multiagent:0.2", agentType="claude")
 start_agent(target="multiagent:0.3", agentType="claude")
 
@@ -246,7 +240,7 @@ tmux new-session -d -s multiagent
 
 ## 📄 スクリプトのカスタマイズ
 
-本MCPサーバーは`scripts/agent_tools/`内のスクリプトを使用します。独自のエージェント起動方法やメッセージ送信方法がある場合は、これらのスクリプトをカスタマイズしてください：
+Agent Collaboration MCPは`scripts/agent_tools/`内のスクリプトを使用します。独自のエージェント起動方法やメッセージ送信方法がある場合は、これらのスクリプトをカスタマイズしてください：
 
 - `agent_manager.sh`: エージェント起動コマンドの定義
 - `pane_controller.sh`: メッセージ送信方法の定義
