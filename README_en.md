@@ -33,7 +33,7 @@ start_agent(target="multiagent:0.3", agentType="gemini")
 Starts an AI agent in the specified tmux target.
 - **target**: tmux target format ("session:window.pane", e.g., "multiagent:0.5")
 - **agentType**: claude (general code development) or gemini (image generation tasks)
-- **Automatic Authentication**: When authentication is required, existing authenticated agents automatically handle the delegation
+- **additionalArgs**: Additional arguments (optional)
 
 ### 2. `get_agent_status` - Check Status
 ```javascript
@@ -151,6 +151,20 @@ start_agent(target="project2:0.0", agentType="gemini")
 send_message(target="project2:0.0", message="Create UI designs")
 ```
 
+### Automatic Authentication Delegation (Optional)
+
+If you want to automate authentication for new agents, you can use [Playwright MCP](https://github.com/microsoft/playwright-mcp) in conjunction with this tool. This allows existing authenticated agents to automatically handle authentication for new agents.
+
+```javascript
+// How it works when Playwright MCP is installed
+start_agent(target="multiagent:0.5", agentType="claude")
+// When authentication is required, the following happens automatically:
+// 1. Detect existing authenticated agents
+// 2. Extract authentication URL from new agent
+// 3. Use Playwright MCP to automate browser authentication
+// 4. Automatically send authentication code to new agent
+```
+
 ### Multi-Agent Collaboration Example
 ```javascript
 // Boss Agent (task management)
@@ -179,9 +193,13 @@ send_message(target="multiagent:0.2", message="C-l", sendEnter=false)
 
 ## 🔧 Prerequisites
 
+### Required
 - **Node.js 18+**
 - **tmux**
-- **multiagent session**: `tmux new-session -d -s multiagent`
+- **tmux session**: `tmux new-session -d -s multiagent`
+
+### Optional (for authentication automation)
+- **[Playwright MCP](https://github.com/microsoft/playwright-mcp)**: Required if you want to automate agent authentication
 
 ## 🚀 Advanced Features
 
