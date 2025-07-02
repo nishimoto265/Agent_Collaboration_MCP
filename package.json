@@ -7,10 +7,7 @@
     "agent-collaboration-mcp": "./bin/mcp-server-agent-collaboration"
   },
   "scripts": {
-    "start": "node index.js",
-    "test": "node test/test-pane-config.js",
-    "setup": "node setup/setup-wizard.js",
-    "validate-config": "node src/tools/paneConfigManager.js"
+    "start": "node index.js"
   },
   "keywords": [
     "mcp",
@@ -34,12 +31,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/agent-collaboration/agent-collaboration-mcp.git"
+    "url": "https://github.com/nishimoto265/Agent_Collaboration_MCP.git"
   },
   "bugs": {
-    "url": "https://github.com/agent-collaboration/agent-collaboration-mcp/issues"
+    "url": "https://github.com/nishimoto265/Agent_Collaboration_MCP/issues"
   },
-  "homepage": "https://github.com/agent-collaboration/agent-collaboration-mcp#readme",
+  "homepage": "https://github.com/nishimoto265/Agent_Collaboration_MCP#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.2",
     "zod": "^3.24.1"
@@ -54,10 +51,7 @@
     "scripts/",
     "README.md",
     "README_en.md",
-    "config.example.json",
-    "pane_config.json",
-    "setup/",
-    "templates/"
+    "config.example.json"
   ],
   "devDependencies": {},
   "preferGlobal": true,
