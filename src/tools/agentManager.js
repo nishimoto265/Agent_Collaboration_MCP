@@ -60,12 +60,23 @@ class AgentManager {
     console.error('[DEBUG] Screen content (first 200 chars):', screenContent.slice(0, 200));
     console.error('[DEBUG] Screen content (last 200 chars):', screenContent.slice(-200));
 
-    // 🔍 優先度0: 最優先 - 「$」が含まれていれば停止中
-    console.error('[DEBUG] Checking for $, content includes $:', content.includes('$'));
-    console.error('[DEBUG] Content length:', content.length);
-    console.error('[DEBUG] Last 100 chars:', content.slice(-100));
-    if (content.includes('$')) {
-      console.error('[DEBUG] $ detected! Returning stopped state');
+    // 🔍 優先度0: 最優先 - 画面の最後の有効な行に「$」が含まれていれば停止中
+    // 空でない最後の行を取得
+    const lines = screenContent.split('\n');
+    let lastValidLine = '';
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim()) {
+        lastValidLine = lines[i].toLowerCase();
+        break;
+      }
+    }
+    
+    console.error('[DEBUG] Last valid line:', lastValidLine);
+    console.error('[DEBUG] Last valid line includes $:', lastValidLine.includes('$'));
+    
+    // 最後の有効な行がシェルプロンプトで終わっている場合のみ停止中と判定
+    if (lastValidLine.match(/\$\s*$/)) {
+      console.error('[DEBUG] $ at end of last line detected! Returning stopped state');
       return { state: 'stopped', agent: 'none', details: '停止中（シェルプロンプト）' };
     }
 
@@ -76,8 +87,8 @@ class AgentManager {
 
     // 🔍 優先度2: ログアウト済み（停止状態）
     if (normalizedLower.includes('successfully logged out') ||
-        (hasShellPrompt && normalizedLower.includes('logged out')) ||
-        (content.includes('Successfully logged out') && hasShellPrompt)) {
+        (content.includes('$') && normalizedLower.includes('logged out')) ||
+        (content.includes('Successfully logged out') && content.includes('$'))) {
       return { state: 'stopped', agent: 'none', details: '停止中（ログアウト済み）' };
     }
     
@@ -270,12 +281,27 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
               const analysis = this.analyzeAgentState(stdout);
               stateSummary[analysis.state]++;
               
-              const lastLine = stdout.split('\n').slice(-1)[0].slice(0, 50) || '(empty)';
-              result += `${this.getStateIcon(analysis.state)} ${currentTarget.padEnd(15)} | ${analysis.agent.padEnd(8)} | ${analysis.state.padEnd(12)} | ${lastLine}\n`;
+              // 空でない最後の行を取得
+              const lines = stdout.split('\n');
+              let lastLine = '(empty)';
+              for (let i = lines.length - 1; i >= 0; i--) {
+                if (lines[i].trim()) {
+                  lastLine = lines[i].slice(0, 50);
+                  break;
+                }
+              }
+              
+              // ペイン名を取得（tmuxペインタイトルから）
+              const [_, windowPane] = currentTarget.split(':');
+              const [windowNum, paneNum] = windowPane.split('.');
+              const paneName = await this.getPaneName(sessionName, windowNum, paneNum);
+              const targetDisplay = paneName ? `${currentTarget} (${paneName})` : currentTarget;
+              
+              result += `${this.getStateIcon(analysis.state)} ${targetDisplay.padEnd(30)} | ${analysis.agent.padEnd(8)} | ${analysis.state.padEnd(12)} | ${lastLine}\n`;
               
             } catch (error) {
               stateSummary.stopped++;
-              result += `❌ ${currentTarget.padEnd(15)} | error    | capture_fail | キャプチャエラー\n`;
+              result += `❌ ${currentTarget.padEnd(30)} | error    | capture_fail | キャプチャエラー\n`;
             }
           }
         } catch (sessionError) {
@@ -296,6 +322,28 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
       
     } catch (error) {
       throw new Error(`Failed to get status: ${error.message}`);
+    }
+  }
+
+  // ペイン番号→名前変換（tmuxペインタイトルから取得）
+  async getPaneName(sessionName, windowNumber, paneNumber) {
+    try {
+      // tmuxのペインタイトルを取得
+      const { stdout } = await execAsync(
+        `tmux display-message -t ${sessionName}:${windowNumber}.${paneNumber} -p '#{pane_title}'`,
+        { timeout: 1000 }
+      );
+      
+      const title = stdout.trim();
+      // デフォルトのシェル名（bash, zshなど）の場合は空文字列を返す
+      if (title === 'bash' || title === 'zsh' || title === 'sh' || title === '') {
+        return '';
+      }
+      
+      return title;
+    } catch (error) {
+      // エラーの場合は空文字列を返す
+      return '';
     }
   }
 
