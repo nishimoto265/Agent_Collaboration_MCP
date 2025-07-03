@@ -12,7 +12,7 @@ setup_directories "$SCRIPT_DIR"
 
 # スクリプトパスの設定
 PANE_CONTROLLER="$SCRIPT_DIR/pane_controller.sh"
-PRESIDENT_DELEGATOR="$UTILITIES_DIR/president_auth_delegator.sh"
+AUTH_DELEGATOR="$UTILITIES_DIR/auth_delegator.sh"
 
 # ログ関数のエイリアス（後方互換性のため）
 log_info() { log "INFO" "$1" "AUTH"; }
@@ -625,9 +625,9 @@ wait_for_auth() {
             # ブラウザ認証が必要な場合
             if [ "$state" = "browser_auth" ]; then
                 # President代行を試行
-                if [ "$use_delegator" = "true" ] && [ "$pane_num" != "16" ] && [ -x "$PRESIDENT_DELEGATOR" ]; then
-                    log_info "President認証代行を試行中..."
-                    if "$PRESIDENT_DELEGATOR" delegate "$pane_num" 2>/dev/null; then
+                if [ "$use_delegator" = "true" ] && [ "$pane_num" != "16" ] && [ -x "$AUTH_DELEGATOR" ]; then
+                    log_info "認証代行を試行中..."
+                    if "$AUTH_DELEGATOR" delegate "$pane_num" 2>/dev/null; then
                         log_success "President認証代行完了"
                         # 代行後も引き続き監視
                         sleep 5
@@ -677,13 +677,13 @@ delegate_auth() {
         return 1
     fi
     
-    if [ ! -x "$PRESIDENT_DELEGATOR" ]; then
+    if [ ! -x "$AUTH_DELEGATOR" ]; then
         log_error "認証代行ツールが見つかりません"
         return 1
     fi
     
     log_info "認証代行を依頼中..."
-    "$PRESIDENT_DELEGATOR" delegate "$pane_num"
+    "$AUTH_DELEGATOR" delegate "$pane_num"
 }
 
 # 認証状態一括確認
