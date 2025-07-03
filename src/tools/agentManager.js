@@ -46,7 +46,9 @@ class AgentManager {
 
   // 画面内容からエージェント状態を判定（auth_helper.shのロジックを流用）
   analyzeAgentState(screenContent) {
+    console.error('[DEBUG] ===== analyzeAgentState CALLED =====');
     if (!screenContent || screenContent.trim() === '') {
+      console.error('[DEBUG] Empty screen content, returning stopped');
       return { state: 'stopped', agent: 'none', details: '停止中' };
     }
 
@@ -54,25 +56,78 @@ class AgentManager {
     const normalizedContent = screenContent.replace(/\n/g, ' ').replace(/\s+/g, ' ');
     const content = screenContent.toLowerCase();
     const normalizedLower = normalizedContent.toLowerCase();
+    
+    console.error('[DEBUG] Screen content (first 200 chars):', screenContent.slice(0, 200));
+    console.error('[DEBUG] Screen content (last 200 chars):', screenContent.slice(-200));
 
-    // 🔍 優先度0: 最下部がシェルプロンプトの場合は停止中（認証画面の残骸を無視）
-    const lines = screenContent.split('\n');
-    const lastLines = lines.slice(-5).join('\n').toLowerCase(); // 最下部5行をチェック（範囲拡大）
-    
-    // シェルプロンプト検出の改善版
-    const hasShellPrompt = lastLines.match(/.*[$#]\s*$/);
-    const hasProjectPath = lastLines.includes('agent_collaboration') || 
-                          lastLines.includes('org-') || 
-                          lastLines.includes('worker') || 
-                          lastLines.includes('boss') || 
-                          lastLines.includes('president');
-    
-    // 認証URLがあってもシェルプロンプトが最下部にある場合は停止状態
-    if (hasShellPrompt && hasProjectPath) {
-      return { state: 'stopped', agent: 'none', details: '停止中（シェル状態）' };
+    // 🔍 優先度0: 最優先 - 「$」が含まれていれば停止中
+    console.error('[DEBUG] Checking for $, content includes $:', content.includes('$'));
+    console.error('[DEBUG] Content length:', content.length);
+    console.error('[DEBUG] Last 100 chars:', content.slice(-100));
+    if (content.includes('$')) {
+      console.error('[DEBUG] $ detected! Returning stopped state');
+      return { state: 'stopped', agent: 'none', details: '停止中（シェルプロンプト）' };
     }
 
-    // 🔍 優先度1: Claude認証中（最優先でチェック）
+    // 🔍 優先度1: Claude実行中（ESC to interrupt表示）
+    if (content.includes('esc to interrupt') || content.includes('escape to interrupt')) {
+      return { state: 'executing_claude', agent: 'claude', details: 'Claude実行中' };
+    }
+
+    // 🔍 優先度2: ログアウト済み（停止状態）
+    if (normalizedLower.includes('successfully logged out') ||
+        (hasShellPrompt && normalizedLower.includes('logged out')) ||
+        (content.includes('Successfully logged out') && hasShellPrompt)) {
+      return { state: 'stopped', agent: 'none', details: '停止中（ログアウト済み）' };
+    }
+    
+    // 🔍 優先度2.5: AUTH-HELPERプロンプト（停止状態）
+    if (content.includes('(auth-helper)') || content.includes('(AUTH-HELPER)')) {
+      return { state: 'stopped', agent: 'none', details: '停止中（AUTH-HELPER）' };
+    }
+
+    // 🔍 優先度3: Claude起動完了（複合条件で判定）
+    // /help for helpとBypassing Permissionsが同時に表示されている場合（ターミナル設定画面があっても）
+    if ((content.includes('/help for help') || normalizedLower.includes('/help for help')) &&
+        ((content.includes('bypassing') && content.includes('permissions')) || 
+         (content.includes('Bypassing') && content.includes('Permissions')))) {
+      console.error('[DEBUG] Claude起動完了と判定: /help for help + Bypassing Permissions');
+      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
+    }
+
+    // /help for helpパターン（認証URLが無い場合は起動完了）
+    if ((content.includes('/help for help') && content.includes('current setup')) ||
+        (content.includes('/help for help') && content.includes('for your current setup')) ||
+        (normalizedLower.includes('/help for help') && normalizedLower.includes('current setup'))) {
+      // 認証関連のURLやプロンプトが表示されていない場合
+      if (!content.includes('claude.ai/oauth/authorize') && 
+          !content.includes('paste code here') &&
+          !content.includes('oauth error') &&
+          !content.includes('browser didn\'t open')) {
+        return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
+      }
+    }
+    
+    // その他のClaude起動完了パターン
+    if ((content.includes('how can i help') || content.includes('try "edit') || content.includes('tip:')) && 
+        !content.includes('preview') && 
+        !content.includes('console.log') && 
+        !content.includes('press enter to continue') && 
+        !content.includes('esc to interrupt') &&
+        !content.includes('(auth-helper)') && !content.includes('(AUTH-HELPER)')) {
+      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
+    }
+
+    // Bypassing Permissionsパターン（単独で表示されている場合のみ）
+    if (((content.includes('bypassing') && content.includes('permissions')) ||
+         (content.includes('Bypassing') && content.includes('Permissions'))) &&
+        content.includes('>') &&
+        !content.includes('paste code here') &&
+        !content.includes('esc to interrupt')) {
+      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
+    }
+
+    // 🔍 優先度4: Claude認証中
     if (content.includes('select login method') || 
         content.includes('claude account with subscription') ||
         content.includes('anthropic console account') ||
@@ -86,14 +141,15 @@ class AgentManager {
         content.includes('login successful') ||
         content.includes('logged in as') ||
         content.includes('oauth error') ||
+        content.includes('paste code here') ||
         (content.includes('dangerous') && content.includes('yes, i accept')) ||
-        content.includes('use claude code\'s terminal setup') ||
+        (content.includes('use claude code\'s terminal setup') && !content.includes('/help for help')) ||
         (content.includes('choose the text style') && content.includes('preview')) ||
         (content.includes('preview') && (content.includes('dark mode') || content.includes('light mode')))) {
       return { state: 'auth_claude', agent: 'claude', details: 'Claude認証中' };
     }
 
-    // 🔍 優先度2: Gemini認証中
+    // 🔍 優先度5: Gemini認証中
     if (content.includes('waiting for auth') ||
         content.includes('login with google') || 
         content.includes('vertex ai') ||
@@ -101,46 +157,7 @@ class AgentManager {
       return { state: 'auth_gemini', agent: 'gemini', details: 'Gemini認証中' };
     }
 
-    // 🔍 優先度3: Claude実行中（ESC to interrupt表示）
-    if (content.includes('esc to interrupt') || content.includes('escape to interrupt')) {
-      return { state: 'executing_claude', agent: 'claude', details: 'Claude実行中' };
-    }
-
-    // 🔍 優先度4: Claude起動完了（auth_helper.shのcheck_claude_startupロジック）
-    // /help for helpパターン
-    if (content.includes('/help for help') && content.includes('current setup')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-    
-    // /help for helpが改行で分割されている場合
-    if (content.includes('/help for help') && content.includes('for your current setup')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-    
-    // 正規化版でのパターン検出
-    if (normalizedLower.includes('/help for help') && normalizedLower.includes('current setup')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-    
-    // その他のClaude起動完了パターン
-    if ((content.includes('how can i help') || content.includes('try "edit') || content.includes('tip:')) && 
-        !content.includes('preview') && 
-        !content.includes('console.log') && 
-        !content.includes('press enter to continue') && 
-        !content.includes('use claude code\'s terminal setup') &&
-        !content.includes('esc to interrupt')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-
-    // Bypassing Permissionsパターン（単独で表示されている場合のみ）
-    if ((content.includes('bypassing') && content.includes('permissions')) &&
-        content.includes('>') &&
-        !content.includes('paste code here') &&
-        !content.includes('esc to interrupt')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-
-    // 🔍 優先度4: Gemini起動完了（auth_helper.shのcheck_gemini_startupロジック）
+    // 🔍 優先度6: Gemini起動完了（auth_helper.shのcheck_gemini_startupロジック）
     if ((content.includes('type your message') || normalizedLower.includes('type your message')) && 
         !content.includes('waiting for auth')) {
       return { state: 'running_gemini', agent: 'gemini', details: 'Gemini起動完了' };
@@ -156,7 +173,7 @@ class AgentManager {
       return { state: 'running_gemini', agent: 'gemini', details: 'Gemini起動完了' };
     }
 
-    // 🔍 優先度5: 停止中（エージェントなし）
+    // 🔍 優先度7: 停止中（エージェントなし）
     // Bashプロンプトのみの場合
     if ((content.match(/.*[$#]\s*$/) || content.includes('bash') || content.includes('sh-')) &&
         !content.includes('claude') && 
@@ -206,7 +223,9 @@ class AgentManager {
         }
 
         // 状態分析
+        console.error(`[DEBUG] Analyzing pane ${fullTarget}, content length: ${screenContent.length}`);
         const analysis = this.analyzeAgentState(screenContent);
+        console.error(`[DEBUG] Analysis result for ${fullTarget}:`, analysis);
         
         result = `🔍 Target ${fullTarget} の詳細状態:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
