@@ -13,6 +13,9 @@ A **completely self-contained** MCP server that enables AI agents to collaborate
 
 ## 🎯 Agent-to-Agent Collaboration
 
+> **⚠️ About Automatic Authentication**  
+> If you want to automate authentication for new agents, [Playwright MCP](https://github.com/microsoft/playwright-mcp) is required. Without Playwright MCP, authentication must be done manually. See [Automatic Authentication Delegation](#automatic-authentication-delegation-optional) for details.
+
 The main purpose of this MCP server is to **enable agents to manage other agents**. For example:
 
 - A **boss agent** can divide tasks and assign them to multiple **worker agents**
