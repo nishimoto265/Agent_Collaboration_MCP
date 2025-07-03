@@ -246,7 +246,7 @@ get_auth_state() {
     # 最優先: シェルプロンプト状態の検出（認証画面残骸を無視）
     local last_lines=$(echo "$screen" | tail -5 | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')
     if echo "$last_lines" | grep -qE '.*[\$#]\s*' && \
-       (echo "$last_lines" | grep -q "agent_collaboration\|org-\|worker\|boss\|president"); then
+       (echo "$last_lines" | grep -q "agent_collaboration\|org-\|pane-\|agent-"); then
         echo "not_started"
         return 0
     fi
@@ -737,12 +737,11 @@ show_usage() {
 コマンド:
   check <pane>              認証状態確認
   wait <pane> [timeout]     認証完了待機（デフォルト:150秒）
-  delegate <pane>           President経由認証
+  delegate <pane>           認証代行依頼
   status                    全ペイン認証状態表示
   
 ペイン指定:
-  - 名前: boss01, worker-a01, ..., president
-  - 番号: 0-16
+  - 番号: 0, 1, 2, ... (実際のペイン数に依存)
 
 認証状態:
   authenticated     - 認証完了
@@ -756,9 +755,9 @@ show_usage() {
   unknown           - 不明
 
 例:
-  $(basename $0) check worker-a01
-  $(basename $0) wait boss01 180
-  $(basename $0) delegate worker-b02
+  $(basename $0) check 0
+  $(basename $0) wait 1 180
+  $(basename $0) delegate 2
   $(basename $0) status
 EOF
 }

@@ -235,14 +235,13 @@ show_usage() {
   status [pane]             状態確認（省略時:全ペイン）
   
 ペイン指定:
-  - 名前: boss01, worker-a01, ..., president
-  - 番号: 0-16
+  - 番号: 0, 1, 2, ... (実際のペイン数に依存)
 
 例:
-  $(basename $0) send worker-a01 "タスクを開始してください"
-  $(basename $0) capture boss01 -20
-  $(basename $0) exec worker-b02 "claude --dangerously-skip-permissions"
-  $(basename $0) stop worker-a01 force
+  $(basename $0) send 0 "タスクを開始してください"
+  $(basename $0) capture 1 -20
+  $(basename $0) exec 2 "claude --dangerously-skip-permissions"
+  $(basename $0) stop 3 force
   $(basename $0) status
 EOF
 }

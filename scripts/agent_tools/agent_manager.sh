@@ -444,25 +444,23 @@ show_usage() {
   custom    - カスタムコマンド
 
 バッチターゲット:
-  all       - President以外の全ペイン
-  workers   - 全Worker
-  bosses    - 全Boss
-  <list>    - カンマ区切りペイン名
+  all       - 全ペイン
+  <list>    - カンマ区切りペイン番号
 
 バッチオプション:
   第3引数にfalseを指定すると順次起動
   (デフォルトは並列起動、Claudeは常に順次)
 
 例:
-  $(basename $0) start worker-a01 claude
-  $(basename $0) start worker-b02 gemini
-  $(basename $0) start boss01 custom "python main.py"
-  $(basename $0) stop worker-a01
-  $(basename $0) restart worker-b02 claude
-  $(basename $0) batch claude workers        # Claudeは順次起動
-  $(basename $0) batch gemini workers        # Geminiは並列起動
+  $(basename $0) start 0 claude
+  $(basename $0) start 1 gemini
+  $(basename $0) start 2 custom "python main.py"
+  $(basename $0) stop 3
+  $(basename $0) restart 4 claude
+  $(basename $0) batch claude all            # Claudeを全ペインで順次起動
+  $(basename $0) batch gemini all            # Geminiを全ペインで並列起動
   $(basename $0) batch python all false      # Pythonを順次起動
-  $(basename $0) batch gemini "worker-a01,worker-a02"
+  $(basename $0) batch gemini "0,1,2"
   $(basename $0) status
 EOF
 }

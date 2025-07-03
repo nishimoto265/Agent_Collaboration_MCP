@@ -123,7 +123,7 @@ class SetupWizard {
   generateCustomLayout(orgCount, workersPerOrg) {
     const customLayout = {
       description: `カスタム構成 - ${orgCount}組織, 各${workersPerOrg}Worker`,
-      totalPanes: orgCount * (workersPerOrg + 1) + 2, // +1 for boss, +2 for president/auth-helper
+      totalPanes: orgCount * (workersPerOrg + 1) + 2, // +1 for coordinator, +2 for manager/auth-helper
       panes: {}
     };
 
@@ -163,13 +163,13 @@ class SetupWizard {
     
     // 管理ペイン
     customLayout.panes[paneIndex] = {
-      name: 'president',
-      displayName: 'PRESIDENT',
+      name: 'manager',
+      displayName: 'MANAGER',
       organization: 'main',
-      role: 'president',
+      role: 'manager',
       agentType: 'claude',
       workdir: '.',
-      description: 'プロジェクト統括'
+      description: 'プロジェクト管理'
     };
     paneIndex++;
     

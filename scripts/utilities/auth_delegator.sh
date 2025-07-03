@@ -222,7 +222,7 @@ find_auth_helper_pane() {
             
             # 最下部がシェルプロンプトの場合はスキップ（MCPと同じロジック）
             if echo "$last_lines" | grep -qE '.*[\$#]\s*$' && \
-               echo "$last_lines" | grep -qE 'org|worker|boss|auth_helper'; then
+               echo "$last_lines" | grep -qE 'org-|pane-|agent-'; then
                 continue  # シェル状態なのでスキップ
             fi
             

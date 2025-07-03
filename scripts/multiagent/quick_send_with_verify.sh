@@ -19,16 +19,12 @@ show_usage() {
   --no-verify     確認なしで送信のみ
   --timeout=N     確認タイムアウト秒数（デフォルト:10秒）
 
-ペイン指定（組織ブロック順序構成）:
-  ORG01 Block: boss01(0) worker-a01(1) worker-b01(2) worker-c01(3)
-  ORG02 Block: boss02(4) worker-a02(5) worker-b02(6) worker-c02(7)
-  ORG03 Block: boss03(8) worker-a03(9) worker-b03(10) worker-c03(11)
-  ORG04 Block: boss04(12) worker-a04(13) worker-b04(14) worker-c04(15)
-  president(16)                           - President (ペイン16)
+ペイン指定:
+  番号: 0, 1, 2, ... (実際のペイン数に依存)
 
 使用例:
-  $0 worker-a01 "実装を開始してください" --verify
-  $0 boss01 "完了報告です" --no-verify
+  $0 0 "実装を開始してください" --verify
+  $0 1 "完了報告です" --no-verify
 EOF
 }
 
