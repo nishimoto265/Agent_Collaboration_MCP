@@ -3,7 +3,6 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const path = require('path');
 const fs = require('fs');
-// PaneConfigManager を削除 - 自動検出機能を廃止
 
 class AgentManager {
   constructor(config = {}) {

@@ -25,9 +25,6 @@ log_warn() { log "WARN" "$1" "WARN"; }
 
 # エージェントタイプ定義は共通設定から取得
 # AGENT_COMMANDS と AGENT_DESCRIPTIONS は config.sh で定義済み
-    ["python"]="Python インタープリタ"
-    ["bash"]="Bash シェル"
-)
 
 # ペイン番号取得（汎用的）
 get_pane_number() {

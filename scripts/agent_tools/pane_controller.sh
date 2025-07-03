@@ -20,10 +20,8 @@ log_success() { log "SUCCESS" "$1" "SUCCESS"; }
 # ペイン番号取得は共通ライブラリの関数を使用
 # get_pane_number() は utils.sh で定義済み
 
-# ペイン番号→名前変換（互換性のため残すが汎用的に）
-get_pane_name() {
-    echo "pane-$1"
-}
+# ペイン番号→名前変換（utils.shで定義済みのため削除）
+# get_pane_name() は common/utils.sh で定義されています
 
 # tmuxセッション存在確認
 check_tmux_session() {
