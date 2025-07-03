@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🤖 President認証代行システム
-# PresidentがPlaywright MCPを使って他ペインの認証を代行する
+# 🤖 認証代行システム
+# エージェント間での認証代行を管理する汎用ツール
 
 set -e
 
@@ -28,19 +28,30 @@ AUTH_HELPER="$MCP_DIR/scripts/agent_tools/auth_helper.sh"
 PANE_CONTROLLER="$MCP_DIR/scripts/agent_tools/pane_controller.sh"
 QUICK_SEND_SCRIPT="$MCP_DIR/scripts/multiagent/quick_send_with_verify.sh"
 
-# President自律認証依頼機能
-request_president_auto_auth() {
-    local president_target="multiagent:0.16"
-    local auth_helper_target="multiagent:0.17"  # 認証専用ペイン
+# 認証代行機能
+request_auth_delegation() {
+    local delegator_pane="${1:-}"
+    local auth_source_pane="${2:-}"
     
-    log_delegator "🤖 President自律認証依頼開始..."
-    
-    # 認証専用ペインの存在確認
-    if ! tmux list-panes -t multiagent -F "#{pane_index}" | grep -q "^17$"; then
-        log_error "認証専用ペイン（17）が存在しません"
-        log_delegator "scripts/multiagent/add_auth_pane.sh add を実行してください"
+    # 実際に存在するペインを動的に決定
+    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+    if [ "$pane_count" -lt 2 ]; then
+        log_error "セッション 'multiagent' に最低2つのペインが必要です"
         return 1
     fi
+    
+    # ペイン番号が指定されていない場合、自動で選択
+    if [ -z "$delegator_pane" ]; then
+        delegator_pane=$((pane_count - 2))  # 最後から2番目
+    fi
+    if [ -z "$auth_source_pane" ]; then
+        auth_source_pane=$((pane_count - 1))  # 最後
+    fi
+    
+    local delegator_target="multiagent:0.$delegator_pane"
+    local auth_source_target="multiagent:0.$auth_source_pane"
+    
+    log_delegator "🤖 認証代行依頼開始... (代行者: pane-$delegator_pane, 認証元: pane-$auth_source_pane)"
     
     # 認証URLを検出
     local screen=$(tmux capture-pane -t "$auth_helper_target" -p -S - 2>/dev/null || echo "")
@@ -65,7 +76,7 @@ Playwright MCPを使用して:
     
     # Presidentに指示を送信
     if [ -f "$QUICK_SEND_SCRIPT" ]; then
-        "$QUICK_SEND_SCRIPT" "president" "$auth_request" --no-verify
+        "$QUICK_SEND_SCRIPT" "$president_pane" "$auth_request" --no-verify
     else
         tmux send-keys -t "$president_target" "$auth_request" C-m
     fi
@@ -98,7 +109,16 @@ Playwright MCPを使用して:
 
 # President認証済み確認（スキップ機能付き）
 check_president_authenticated() {
-    local president_target="multiagent:0.16"
+    # 実際に存在するペインから president を動的に決定
+    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+    if [ "$pane_count" -lt 2 ]; then
+        log_error "セッション 'multiagent' に最低2つのペインが必要です"
+        return 1
+    fi
+    
+    # 最後から2番目をpresidentとして使用
+    local president_pane=$((pane_count - 2))
+    local president_target="multiagent:0.$president_pane"
     local max_wait="${1:-30}"
     local enable_auto_approve="${2:-true}"
     
@@ -185,39 +205,21 @@ check_president_authenticated() {
     return 1
 }
 
-# ペイン番号からペイン名を取得
-get_pane_name() {
-    local pane_num="$1"
-    case "$pane_num" in
-        0) echo "boss01" ;;
-        1) echo "worker-a01" ;;
-        2) echo "worker-b01" ;;
-        3) echo "worker-c01" ;;
-        4) echo "boss02" ;;
-        5) echo "worker-a02" ;;
-        6) echo "worker-b02" ;;
-        7) echo "worker-c02" ;;
-        8) echo "boss03" ;;
-        9) echo "worker-a03" ;;
-        10) echo "worker-b03" ;;
-        11) echo "worker-c03" ;;
-        12) echo "boss04" ;;
-        13) echo "worker-a04" ;;
-        14) echo "worker-b04" ;;
-        15) echo "worker-c04" ;;
-        16) echo "president" ;;
-        17) echo "auth-helper" ;;
-        *) echo "unknown" ;;
-    esac
-}
 
 # 認証代行可能なペインを自動検出（MCPと同じロジック使用）
 find_auth_helper_pane() {
     
     log_delegator "🔍 認証代行可能なペインを検索中..." >&2
     
-    # 全ペインをチェック（0-17）してauthenticatedを探す
-    for i in {0..17}; do
+    # 実際に存在するペインを動的に取得
+    local pane_list=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | sort -n)
+    if [ -z "$pane_list" ]; then
+        log_delegator "⚠️ セッション 'multiagent' のペイン一覧を取得できません" >&2
+        return 1
+    fi
+    
+    # 存在するペインのみをチェックしてauthenticatedを探す
+    for i in $pane_list; do
         # auth_helper.shのcheckコマンドを使用
         local state=$("$AUTH_HELPER" check "$i" 2>/dev/null | grep -o "authenticated")
         
@@ -245,7 +247,17 @@ find_auth_helper_pane() {
 # Presidentに認証代行を依頼（スキップチェック付き）
 delegate_auth_to_president() {
     local target_pane="$1"
-    local president_target="multiagent:0.16"
+    
+    # 実際に存在するペインから president を動的に決定
+    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+    if [ "$pane_count" -lt 2 ]; then
+        log_error "セッション 'multiagent' に最低2つのペインが必要です"
+        return 1
+    fi
+    
+    # 最後から2番目をpresidentとして使用
+    local president_pane=$((pane_count - 2))
+    local president_target="multiagent:0.$president_pane"
     
     log_delegator "🔧 DEBUG: delegate_auth_to_president called with args: $@"
     log_delegator "🔧 DEBUG: target_pane='$target_pane'"
@@ -282,12 +294,6 @@ delegate_auth_to_president() {
         return 0
     fi
     
-    # 認証専用ペインの存在確認
-    if ! tmux list-panes -t multiagent -F "#{pane_index}" | grep -q "^17$"; then
-        log_error "認証専用ペイン（17）が存在しません"
-        log_delegator "scripts/multiagent/add_auth_pane.sh add を実行してください"
-        return 1
-    fi
     
     # 対象ペインの認証URLを取得
     log_delegator "🔍 ペイン$target_pane から認証URL抽出中..."
@@ -302,19 +308,18 @@ delegate_auth_to_president() {
     fi
     
     # 認証専用ペインの状態確認
-    local auth_helper_state=$("$AUTH_HELPER" check auth-helper 2>&1 || echo "not_started")
+    local auth_helper_state=$("$AUTH_HELPER" check $auth_helper_pane 2>&1 || echo "not_started")
     log_delegator "認証専用ペインの状態: $auth_helper_state"
     
     # シンプルな認証指示を送信
     log_delegator "🤖 Auth-Helperに認証コード取得指示を送信..."
     
-    local auth_instruction="$auth_url でPlaywright MCPを使って承認ボタンをクリックし、認証コードを取得してください。認証コードを取得したら、quick_send_with_verify.shを使ってペイン$target_pane ($(get_quick_send_target "$target_pane"))に認証コードを送信してください。送信後の操作は自動で処理されます。"
+    local auth_instruction="$auth_url でPlaywright MCPを使って承認ボタンをクリックし、認証コードを取得してください。認証コードを取得したら、quick_send_with_verify.shを使ってペイン$target_pane に認証コードを送信してください。送信後の操作は自動で処理されます。"
     
     if [ -f "$QUICK_SEND_SCRIPT" ]; then
-        local pane_name=$(get_pane_name "$auth_helper_pane")
-        log_delegator "🔍 デバッグ: auth_helper_pane='$auth_helper_pane', pane_name='$pane_name'"
-        "$QUICK_SEND_SCRIPT" "$pane_name" "$auth_instruction" --verify
-        log_delegator "✅ ペイン$auth_helper_pane ($pane_name) に認証代行指示送信完了"
+        log_delegator "🔍 デバッグ: auth_helper_pane='$auth_helper_pane'"
+        "$QUICK_SEND_SCRIPT" "$auth_helper_pane" "$auth_instruction" --verify
+        log_delegator "✅ ペイン$auth_helper_pane に認証代行指示送信完了"
     else
         # fallback: tmux send-keys直接送信（確実なEnter送信）
         log_delegator "🔄 fallback: tmux直接送信でEnter確実実行"
@@ -509,31 +514,6 @@ check_target_pane_progress() {
     return 1
 }
 
-# ペイン番号→quick_send_target変換
-get_quick_send_target() {
-    local pane="$1"
-    case $pane in
-        0) echo "boss01" ;;
-        1) echo "worker-a01" ;;
-        2) echo "worker-b01" ;;
-        3) echo "worker-c01" ;;
-        4) echo "boss02" ;;
-        5) echo "worker-a02" ;;
-        6) echo "worker-b02" ;;
-        7) echo "worker-c02" ;;
-        8) echo "boss03" ;;
-        9) echo "worker-a03" ;;
-        10) echo "worker-b03" ;;
-        11) echo "worker-c03" ;;
-        12) echo "boss04" ;;
-        13) echo "worker-a04" ;;
-        14) echo "worker-b04" ;;
-        15) echo "worker-c04" ;;
-        16) echo "president" ;;
-        17) echo "auth-helper" ;;
-        *) echo "" ;;
-    esac
-}
 
 # URL検出機能（tmux画面から認証URLを抽出）
 detect_auth_url_from_pane() {

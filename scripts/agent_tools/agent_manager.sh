@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 🤖 Agent Manager - エージェント管理ツール
-# Presidentが各ペインのエージェントを動的に管理
+# 各ペインのエージェントを動的に管理
 
 set -e
 
@@ -52,30 +52,24 @@ declare -A AGENT_DESCRIPTIONS=(
     ["bash"]="Bash シェル"
 )
 
-# ペイン番号取得
+# ペイン番号取得（汎用的）
 get_pane_number() {
-    case "$1" in
-        "boss01") echo "0" ;;
-        "worker-a01") echo "1" ;;
-        "worker-b01") echo "2" ;;
-        "worker-c01") echo "3" ;;
-        "boss02") echo "4" ;;
-        "worker-a02") echo "5" ;;
-        "worker-b02") echo "6" ;;
-        "worker-c02") echo "7" ;;
-        "boss03") echo "8" ;;
-        "worker-a03") echo "9" ;;
-        "worker-b03") echo "10" ;;
-        "worker-c03") echo "11" ;;
-        "boss04") echo "12" ;;
-        "worker-a04") echo "13" ;;
-        "worker-b04") echo "14" ;;
-        "worker-c04") echo "15" ;;
-        "president") echo "16" ;;
-        "auth-helper") echo "17" ;;
-        [0-9]|1[0-7]) echo "$1" ;;
-        *) echo "" ;;
-    esac
+    local input="$1"
+    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+    
+    # 数値チェック
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        # 有効範囲チェック
+        if [ "$input" -lt "$pane_count" ]; then
+            echo "$input"
+        else
+            echo ""
+        fi
+        return
+    fi
+    
+    # 名前は使用しない（ペイン番号のみ使用）
+    echo ""
 }
 
 # 画面から直接エージェント状態を取得
@@ -143,13 +137,8 @@ start_agent() {
         log_info "$agent_type 起動中 (ペイン $pane)"
     fi
     
-    # エージェント起動（ディレクトリ移動を含む）
-    if [ "$agent_type" = "claude" ] && [ "$pane" = "president" ]; then
-        # Presidentの場合はプロジェクトルートで起動
-        "$PANE_CONTROLLER" exec "$pane" "cd $PROJECT_DIR && $command"
-    else
-        "$PANE_CONTROLLER" exec "$pane" "$command"
-    fi
+    # エージェント起動
+    "$PANE_CONTROLLER" exec "$pane" "$command"
     
     # エージェントタイプ別の認証・起動確認
     log_info "$agent_type 認証/起動プロセスを監視中..."
@@ -226,27 +215,12 @@ check_agent_status() {
         printf "%-12s %-10s %-10s %s\n" "ペイン" "タイプ" "状態" "最終更新"
         echo "--------------------------------------------"
         
-        for i in {0..17}; do
-            local name=$(case $i in
-                0) echo "boss01" ;;
-                1) echo "worker-a01" ;;
-                2) echo "worker-b01" ;;
-                3) echo "worker-c01" ;;
-                4) echo "boss02" ;;
-                5) echo "worker-a02" ;;
-                6) echo "worker-b02" ;;
-                7) echo "worker-c02" ;;
-                8) echo "boss03" ;;
-                9) echo "worker-a03" ;;
-                10) echo "worker-b03" ;;
-                11) echo "worker-c03" ;;
-                12) echo "boss04" ;;
-                13) echo "worker-a04" ;;
-                14) echo "worker-b04" ;;
-                15) echo "worker-c04" ;;
-                16) echo "president" ;;
-                17) echo "auth-helper" ;;
-            esac)
+        # 実際に存在するペインを動的に取得
+        local pane_list=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | sort -n)
+        local pane_count=$(echo "$pane_list" | wc -w)
+        
+        for i in $pane_list; do
+            local name="pane-$i"
             
             # 画面から直接状態を取得
             local status=$(get_agent_state $i)
@@ -282,9 +256,9 @@ check_agent_status() {
         echo "============================================"
         local running=0
         local auth_pending=0
-        local total=18
+        local total=$pane_count
         
-        for i in {0..17}; do
+        for i in $pane_list; do
             local status=$(get_agent_state $i)
             case "$status" in
                 "running") running=$((running + 1)) ;;
@@ -362,16 +336,13 @@ batch_start() {
     
     local target_panes=()
     if [ "$panes" = "all" ]; then
-        # President以外の全ペイン
-        target_panes=(boss01 worker-a01 worker-b01 worker-c01 boss02 worker-a02 worker-b02 worker-c02 boss03 worker-a03 worker-b03 worker-c03 boss04 worker-a04 worker-b04 worker-c04)
-    elif [ "$panes" = "workers" ]; then
-        # Worker のみ
-        target_panes=(worker-a01 worker-b01 worker-c01 worker-a02 worker-b02 worker-c02 worker-a03 worker-b03 worker-c03 worker-a04 worker-b04 worker-c04)
-    elif [ "$panes" = "bosses" ]; then
-        # Boss のみ
-        target_panes=(boss01 boss02 boss03 boss04)
+        # 全てのペインを番号で指定（汎用的）
+        local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+        for ((i=0; i<pane_count; i++)); do
+            target_panes+=("$i")
+        done
     else
-        # カンマ区切りのペイン指定
+        # カンマ区切りのペイン指定（番号のみ）
         IFS=',' read -ra target_panes <<< "$panes"
     fi
     
@@ -449,8 +420,12 @@ update_auth_pending() {
     local updated=0
     local still_pending=0
     
+    # 実際に存在するペインを動的に取得
+    local pane_list=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | sort -n)
+    local pane_count=$(echo "$pane_list" | wc -w)
+    
     # 全エージェントの状態を確認
-    for i in {0..17}; do
+    for i in $pane_list; do
         local status=$(get_agent_state $i)
         
         if [ "$status" = "auth_pending" ]; then
@@ -458,27 +433,7 @@ update_auth_pending() {
             local auth_state=$("$AUTH_HELPER" check "$i" 2>&1 | grep -o "authenticated" || echo "")
             
             if [ "$auth_state" = "authenticated" ]; then
-                local pane_name=$(case $i in
-                    0) echo "boss01" ;;
-                    1) echo "worker-a01" ;;
-                    2) echo "worker-b01" ;;
-                    3) echo "worker-c01" ;;
-                    4) echo "boss02" ;;
-                    5) echo "worker-a02" ;;
-                    6) echo "worker-b02" ;;
-                    7) echo "worker-c02" ;;
-                    8) echo "boss03" ;;
-                    9) echo "worker-a03" ;;
-                    10) echo "worker-b03" ;;
-                    11) echo "worker-c03" ;;
-                    12) echo "boss04" ;;
-                    13) echo "worker-a04" ;;
-                    14) echo "worker-b04" ;;
-                    15) echo "worker-c04" ;;
-                    16) echo "president" ;;
-                    17) echo "auth-helper" ;;
-                esac)
-                log_success "$pane_name 認証完了 → running"
+                log_success "pane-$i 認証完了 → running"
                 updated=$((updated + 1))
             else
                 still_pending=$((still_pending + 1))
