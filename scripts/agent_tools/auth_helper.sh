@@ -5,51 +5,23 @@
 
 set -e
 
-# MCPディレクトリ内で完全に完結する設定
+# 共通ライブラリの読み込み
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$SCRIPT_DIR/../common/utils.sh"
+setup_directories "$SCRIPT_DIR"
 
-# MCPディレクトリ内のスクリプトを使用
+# スクリプトパスの設定
 PANE_CONTROLLER="$SCRIPT_DIR/pane_controller.sh"
-PRESIDENT_DELEGATOR="$MCP_DIR/scripts/utilities/president_auth_delegator.sh"
-PROJECT_DIR="$(cd "$MCP_DIR/../.." && pwd)"  # MCPの2つ上がプロジェクトルート
+PRESIDENT_DELEGATOR="$UTILITIES_DIR/president_auth_delegator.sh"
 
-# ログ関数
-log_info() {
-    echo -e "\033[1;32m[AUTH]\033[0m $1"
-}
+# ログ関数のエイリアス（後方互換性のため）
+log_info() { log "INFO" "$1" "AUTH"; }
+log_error() { log "ERROR" "$1" "ERROR"; }
+log_success() { log "SUCCESS" "$1" "SUCCESS"; }
+log_warn() { log "WARN" "$1" "WARN"; }
 
-log_error() {
-    echo -e "\033[1;31m[ERROR]\033[0m $1"
-}
-
-log_success() {
-    echo -e "\033[1;34m[SUCCESS]\033[0m $1"
-}
-
-log_warn() {
-    echo -e "\033[1;33m[WARN]\033[0m $1"
-}
-
-# ペイン番号取得（汎用的）
-get_pane_number() {
-    local input="$1"
-    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
-    
-    # 数値チェック
-    if [[ "$input" =~ ^[0-9]+$ ]]; then
-        # 有効範囲チェック
-        if [ "$input" -lt "$pane_count" ]; then
-            echo "$input"
-        else
-            echo ""
-        fi
-        return
-    fi
-    
-    # 名前は使用しない（ペイン番号のみ使用）
-    echo ""
-}
+# ペイン番号取得は共通ライブラリの関数を使用
+# get_pane_number() は utils.sh で定義済み
 
 # Claude Code起動状態確認（精度向上版）
 check_claude_startup() {
@@ -395,23 +367,27 @@ handle_auth_prompt() {
     case "$state" in
         "permission_prompt")
             log_info "Bypass Permissions同意画面 - Down + Enter実行"
-            tmux send-keys -t "multiagent:0.$pane_num" Down
-            sleep 0.1
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
+            local target=$(get_tmux_target "$pane_num")
+            tmux send-keys -t "$target" Down
+            delay "$SHORT_DELAY"
+            tmux send-keys -t "$target" C-m
             ;;
         "continue_prompt")
             log_info "続行画面 - Enter実行"
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
+            local target=$(get_tmux_target "$pane_num")
+            tmux send-keys -t "$target" C-m
             ;;
         "terminal_setup")
             log_info "Terminal設定画面 - Yes選択（Enter実行）"
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
+            local target=$(get_tmux_target "$pane_num")
+            tmux send-keys -t "$target" C-m
             ;;
         "theme_selection")
             log_info "テーマ選択画面 - スキップ（Enter×2）"
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
-            sleep 0.1
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
+            local target=$(get_tmux_target "$pane_num")
+            tmux send-keys -t "$target" C-m
+            delay "$SHORT_DELAY"
+            tmux send-keys -t "$target" C-m
             ;;
         "browser_auth")
             log_warn "ブラウザ認証が必要です"
@@ -631,7 +607,8 @@ wait_for_auth() {
                 log_info "認証方法選択画面 - デフォルト選択でEnterを送信 [$method_selection_count/3]"
                 
                 # Enterのみ送信（デフォルトのOption 1が自動選択される）
-                tmux send-keys -t "multiagent:0.$pane_num" "Enter"
+                local target=$(get_tmux_target "$pane_num")
+                tmux send-keys -t "$target" "Enter"
                 sleep 4  # 画面遷移待機
                 continue
             fi
@@ -718,9 +695,9 @@ check_all_status() {
     local total=0
     
     # 実際に存在するペインを動的に取得
-    local pane_list=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | sort -n)
+    local pane_list=$(get_all_panes)
     if [ -z "$pane_list" ]; then
-        log_error "セッション 'multiagent' のペイン一覧を取得できません"
+        log_error "セッション '$TMUX_SESSION' のペイン一覧を取得できません"
         return 1
     fi
     

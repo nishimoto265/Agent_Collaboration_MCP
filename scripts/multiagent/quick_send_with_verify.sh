@@ -2,6 +2,11 @@
 
 # 🚀 クイック送信 (確認機能付き) - Multi-Agent Worktree間の直接送信・確認
 
+# 共通ライブラリの読み込み
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common/utils.sh"
+setup_directories "$SCRIPT_DIR"
+
 show_usage() {
     cat << EOF
 🚀 クイック送信コマンド (確認機能付き)
@@ -27,31 +32,8 @@ show_usage() {
 EOF
 }
 
-# ペイン番号マッピング（組織ブロック順序構成）
-get_pane_number() {
-    case "$1" in
-        "boss01") echo "0" ;;          # pane 0: ORG01-Boss
-        "worker-a01") echo "1" ;;      # pane 1: ORG01-Worker-A
-        "worker-b01") echo "2" ;;      # pane 2: ORG01-Worker-B
-        "worker-c01") echo "3" ;;      # pane 3: ORG01-Worker-C
-        "boss02") echo "4" ;;          # pane 4: ORG02-Boss
-        "worker-a02") echo "5" ;;      # pane 5: ORG02-Worker-A
-        "worker-b02") echo "6" ;;      # pane 6: ORG02-Worker-B
-        "worker-c02") echo "7" ;;      # pane 7: ORG02-Worker-C
-        "boss03") echo "8" ;;          # pane 8: ORG03-Boss
-        "worker-a03") echo "9" ;;      # pane 9: ORG03-Worker-A
-        "worker-b03") echo "10" ;;     # pane 10: ORG03-Worker-B
-        "worker-c03") echo "11" ;;     # pane 11: ORG03-Worker-C
-        "boss04") echo "12" ;;         # pane 12: ORG04-Boss
-        "worker-a04") echo "13" ;;     # pane 13: ORG04-Worker-A
-        "worker-b04") echo "14" ;;     # pane 14: ORG04-Worker-B
-        "worker-c04") echo "15" ;;     # pane 15: ORG04-Worker-C
-        "president") echo "16" ;;      # pane 16: President
-        "auth-helper") echo "17" ;;    # pane 17: Auth-Helper
-        [0-9]|1[0-7]) echo "$1" ;;    # 数値の場合はそのまま
-        *) echo "" ;;
-    esac
-}
+# ペイン番号取得は共通ライブラリの関数を使用
+# get_pane_number() は utils.sh で定義済み
 
 # 送信ログ記録
 log_send_attempt() {
@@ -60,8 +42,8 @@ log_send_attempt() {
     local status="$3"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
-    mkdir -p logs/message_delivery
-    echo "[$timestamp] $target: $status - \"$message\"" >> logs/message_delivery/send_log.txt
+    ensure_log_directory
+    echo "[$timestamp] $target: $status - \"$message\"" >> "$LOG_DIR/send_log.txt"
 }
 
 # ペイン活性確認
@@ -69,15 +51,13 @@ check_pane_active() {
     local target="$1"
     local pane_num="$2"
     
-    # 17ペイン統合構成では、presidentもmultiagentセッション内
-    
-    if ! tmux has-session -t "multiagent" 2>/dev/null; then
-        echo "❌ multiagentセッションが見つかりません"
+    if ! check_session_exists; then
+        echo "❌ $TMUX_SESSIONセッションが見つかりません"
         return 1
     fi
     
-    # ペインが存在するかチェック (0-16の17ペイン)
-    if ! tmux list-panes -t "multiagent:0" | grep -q "^$pane_num:"; then
+    # ペインが存在するかチェック
+    if ! check_pane_exists "$pane_num"; then
         echo "❌ ペイン$pane_numが見つかりません"
         return 1
     fi
@@ -90,10 +70,10 @@ capture_before_send() {
     local target="$1"
     local pane_num="$2"
     
-    mkdir -p logs/message_delivery
+    ensure_log_directory
     
-    # 17ペイン統合構成：すべてmultiagentセッション内
-    tmux capture-pane -t "multiagent:0.$pane_num" -p > "logs/message_delivery/${target}_before.txt"
+    local target_pane=$(get_tmux_target "$pane_num")
+    tmux capture-pane -t "$target_pane" -p > "$LOG_DIR/${target}_before.txt"
 }
 
 # 送信後の画面状態確認
@@ -111,11 +91,12 @@ verify_message_received() {
         sleep 0.5
         check_count=$((check_count + 1))
         
-        # 現在の画面状態をキャプチャ (17ペイン統合構成)
-        tmux capture-pane -t "multiagent:0.$pane_num" -p > "logs/message_delivery/${target}_after.txt"
+        # 現在の画面状態をキャプチャ
+        local target_pane=$(get_tmux_target "$pane_num")
+        tmux capture-pane -t "$target_pane" -p > "$LOG_DIR/${target}_after.txt"
         
         # 送信前後の差分確認
-        if ! diff -q "logs/message_delivery/${target}_before.txt" "logs/message_delivery/${target}_after.txt" >/dev/null 2>&1; then
+        if ! diff -q "$LOG_DIR/${target}_before.txt" "$LOG_DIR/${target}_after.txt" >/dev/null 2>&1; then
             echo "✅ 画面に変化を検出 - メッセージ受信を確認"
             
             # Claude Codeが応答しているかチェック（より柔軟な条件）
@@ -152,15 +133,15 @@ send_message() {
     
     echo "📤 送信中: $target (ペイン$pane_num) ← '$message'"
     
-    # 17ペイン統合構成：すべてmultiagentセッション内で統一処理
     # 送信前のデバッグ出力
+    local target_pane=$(get_tmux_target "$pane_num")
     echo "🔍 送信前画面状態確認 (ペイン$pane_num):"
-    tmux capture-pane -t "multiagent:0.$pane_num" -p | tail -3
+    tmux capture-pane -t "$target_pane" -p | tail -3
     echo "================================="
     
     # Claude Codeのプロンプトをクリア
-    tmux send-keys -t "multiagent:0.$pane_num" C-c
-    sleep 0.3
+    tmux send-keys -t "$target_pane" C-c
+    delay "$MEDIUM_DELAY"
     
     # メッセージから改行文字を除去（認証コード対応）
     local cleaned_message=$(echo "$message" | tr -d '\n\r' | tr -d '\t')
@@ -172,23 +153,23 @@ send_message() {
         echo "⚠️ 改行文字を検出・除去しました"
         echo "🔍 除去文字: $(echo "$message" | od -c | head -1)"
     fi
-    tmux send-keys -t "multiagent:0.$pane_num" "$cleaned_message"
-    sleep 0.3  # メッセージ送信後の待機時間を延長
+    tmux send-keys -t "$target_pane" "$cleaned_message"
+    delay "$MEDIUM_DELAY"  # メッセージ送信後の待機時間
     
     # Enter送信前のデバッグ出力
     echo "🔍 Enter送信前画面状態:"
-    tmux capture-pane -t "multiagent:0.$pane_num" -p | tail -2
+    tmux capture-pane -t "$target_pane" -p | tail -2
     echo "================================="
     
     # エンター押下
     echo "⏎ Enter送信実行中..."
-    tmux send-keys -t "multiagent:0.$pane_num" C-m
+    tmux send-keys -t "$target_pane" C-m
     
-    sleep 1.0  # 送信完了待機時間を延長
+    delay "$LONG_DELAY"  # 送信完了待機時間
     
     # 送信後のデバッグ出力
     echo "🔍 Enter送信後画面状態:"
-    tmux capture-pane -t "multiagent:0.$pane_num" -p | tail -3
+    tmux capture-pane -t "$target_pane" -p | tail -3
     echo "================================="
 }
 
@@ -265,7 +246,7 @@ main() {
         else
             log_send_attempt "$target" "$message" "VERIFY_FAILED"
             echo "⚠️ 送信は完了しましたが、受信確認に失敗しました"
-            echo "📋 手動確認: tmux capture-pane -t multiagent:0.$pane_num -p | tail -10"
+            echo "📋 手動確認: tmux capture-pane -t $(get_tmux_target "$pane_num") -p | tail -10"
             return 1
         fi
     fi

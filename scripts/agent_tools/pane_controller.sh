@@ -1,98 +1,36 @@
 #!/bin/bash
 
 # 🎮 Pane Controller - tmuxペイン制御ツール
-# Presidentが各エージェントペインを制御するための基本ツール
+# 各エージェントペインを制御するための基本ツール
 
 set -e
 
-# MCPディレクトリ内で完全に完結する設定
+# 共通ライブラリの読み込み
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$SCRIPT_DIR/../common/utils.sh"
+setup_directories "$SCRIPT_DIR"
 
-# MCPディレクトリ内のスクリプトを使用
-PROJECT_DIR="$(cd "$MCP_DIR/../.." && pwd)"  # MCPの2つ上がプロジェクトルート
-QUICK_SEND_SCRIPT="$MCP_DIR/scripts/multiagent/quick_send_with_verify.sh"
+QUICK_SEND_SCRIPT="$MULTIAGENT_DIR/quick_send_with_verify.sh"
 
-# ログ関数
-log_info() {
-    echo -e "\033[1;32m[INFO]\033[0m $1"
-}
+# ログ関数のエイリアス（後方互換性のため）
+log_info() { log "INFO" "$1" "INFO"; }
+log_error() { log "ERROR" "$1" "ERROR"; }
+log_success() { log "SUCCESS" "$1" "SUCCESS"; }
 
-log_error() {
-    echo -e "\033[1;31m[ERROR]\033[0m $1"
-}
+# ペイン番号取得は共通ライブラリの関数を使用
+# get_pane_number() は utils.sh で定義済み
 
-log_success() {
-    echo -e "\033[1;34m[SUCCESS]\033[0m $1"
-}
-
-# ペイン番号マッピング（組織ブロック順序構成）
-get_pane_number() {
-    case "$1" in
-        "boss01") echo "0" ;;
-        "worker-a01") echo "1" ;;
-        "worker-b01") echo "2" ;;
-        "worker-c01") echo "3" ;;
-        "boss02") echo "4" ;;
-        "worker-a02") echo "5" ;;
-        "worker-b02") echo "6" ;;
-        "worker-c02") echo "7" ;;
-        "boss03") echo "8" ;;
-        "worker-a03") echo "9" ;;
-        "worker-b03") echo "10" ;;
-        "worker-c03") echo "11" ;;
-        "boss04") echo "12" ;;
-        "worker-a04") echo "13" ;;
-        "worker-b04") echo "14" ;;
-        "worker-c04") echo "15" ;;
-        "president") echo "16" ;;
-        "auth-helper") echo "17" ;;
-        [0-9]|1[0-7]) echo "$1" ;;  # 数値の場合はそのまま
-        *) echo "" ;;
-    esac
-}
-
-# ペイン番号→名前変換
+# ペイン番号→名前変換（互換性のため残すが汎用的に）
 get_pane_name() {
-    case "$1" in
-        0) echo "boss01" ;;
-        1) echo "worker-a01" ;;
-        2) echo "worker-b01" ;;
-        3) echo "worker-c01" ;;
-        4) echo "boss02" ;;
-        5) echo "worker-a02" ;;
-        6) echo "worker-b02" ;;
-        7) echo "worker-c02" ;;
-        8) echo "boss03" ;;
-        9) echo "worker-a03" ;;
-        10) echo "worker-b03" ;;
-        11) echo "worker-c03" ;;
-        12) echo "boss04" ;;
-        13) echo "worker-a04" ;;
-        14) echo "worker-b04" ;;
-        15) echo "worker-c04" ;;
-        16) echo "president" ;;
-        17) echo "auth-helper" ;;
-        *) echo "unknown" ;;
-    esac
+    echo "pane-$1"
 }
 
 # tmuxセッション存在確認
 check_tmux_session() {
-    if ! tmux has-session -t multiagent 2>/dev/null; then
-        log_error "tmuxセッション 'multiagent' が存在しません"
+    if ! check_session_exists; then
+        log_error "tmuxセッション '$TMUX_SESSION' が存在しません"
         echo "セッションを作成するには以下を実行してください:"
         echo "  scripts/multiagent/create_multiagent_tmux.sh"
-        return 1
-    fi
-    return 0
-}
-
-# ペイン存在確認
-check_pane_exists() {
-    local pane_num="$1"
-    if ! tmux list-panes -t "multiagent:0" -F "#{pane_index}" 2>/dev/null | grep -q "^${pane_num}$"; then
-        log_error "ペイン $pane_num が存在しません"
         return 1
     fi
     return 0
@@ -120,9 +58,10 @@ send_message() {
         "$QUICK_SEND_SCRIPT" "$pane" "$message" --no-verify
     else
         # 直接tmux send-keys使用
-        tmux send-keys -t "multiagent:0.$pane_num" "$message"
+        local target=$(get_tmux_target "$pane_num")
+        tmux send-keys -t "$target" "$message"
         if [ "$enter" = "true" ]; then
-            tmux send-keys -t "multiagent:0.$pane_num" C-m
+            tmux send-keys -t "$target" C-m
         fi
     fi
     
@@ -183,7 +122,8 @@ clear_pane() {
     log_info "ペイン $pane (番号: $pane_num) をクリア中..."
     
     # Ctrl+L でクリア
-    tmux send-keys -t "multiagent:0.$pane_num" C-l
+    local target=$(get_tmux_target "$pane_num")
+    tmux send-keys -t "$target" C-l
     
     log_success "ペインクリア完了"
 }
@@ -205,13 +145,14 @@ execute_command() {
     log_info "ペイン $pane (番号: $pane_num) でコマンド実行中: $command"
     
     # Ctrl+C を2回送信して現在のプロセスを確実に中断
-    tmux send-keys -t "multiagent:0.$pane_num" C-c
-    sleep 0.2
-    tmux send-keys -t "multiagent:0.$pane_num" C-c
-    sleep 0.5
+    local target=$(get_tmux_target "$pane_num")
+    tmux send-keys -t "$target" C-c
+    delay "$MEDIUM_DELAY"
+    tmux send-keys -t "$target" C-c
+    delay "$MEDIUM_DELAY"
     
     # コマンド送信
-    tmux send-keys -t "multiagent:0.$pane_num" "$command" C-m
+    tmux send-keys -t "$target" "$command" C-m
     
     log_success "コマンド実行開始"
 }
@@ -233,15 +174,16 @@ stop_process() {
     log_info "ペイン $pane (番号: $pane_num) のプロセスを停止中..."
     
     # Ctrl+C を2回送信（デフォルト）
-    tmux send-keys -t "multiagent:0.$pane_num" C-c
-    sleep 0.2
-    tmux send-keys -t "multiagent:0.$pane_num" C-c
-    sleep 0.2
+    local target=$(get_tmux_target "$pane_num")
+    tmux send-keys -t "$target" C-c
+    delay "$MEDIUM_DELAY"
+    tmux send-keys -t "$target" C-c
+    delay "$MEDIUM_DELAY"
     
     if [ "$force" = "true" ]; then
         # 強制停止の場合は追加でCtrl+Cを送信
-        tmux send-keys -t "multiagent:0.$pane_num" C-c
-        sleep 0.2
+        tmux send-keys -t "$target" C-c
+        delay "$MEDIUM_DELAY"
     fi
     
     log_success "プロセス停止シグナル送信完了"
@@ -255,7 +197,8 @@ check_status() {
         # 全ペイン状態表示
         log_info "全ペイン状態:"
         echo "=================================="
-        for i in {0..16}; do
+        local panes=$(get_all_panes)
+        for i in $panes; do
             local name=$(get_pane_name $i)
             local last_line=$(capture_screen $i "-1" 2>/dev/null | tail -1 | sed 's/[[:space:]]*$//')
             printf "%-12s (pane %2d): %s\n" "$name" "$i" "${last_line:-(empty)}"

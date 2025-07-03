@@ -5,49 +5,26 @@
 
 set -e
 
-# MCPディレクトリ内で完全に完結する設定
+# 共通ライブラリの読み込み
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$SCRIPT_DIR/../common/utils.sh"
+setup_directories "$SCRIPT_DIR"
 
-# MCPディレクトリ内のスクリプトを使用
-PROJECT_DIR="$(cd "$MCP_DIR/../.." && pwd)"  # MCPの2つ上がプロジェクトルート
+# スクリプトパスの設定
 PANE_CONTROLLER="$SCRIPT_DIR/pane_controller.sh"
 AUTH_HELPER="$SCRIPT_DIR/auth_helper.sh"
 
 # エージェント設定ファイル
 AGENT_AUTH_CONFIG="$PROJECT_DIR/.agent_auth_config.json"
 
-# ログ関数
-log_info() {
-    echo -e "\033[1;32m[AGENT]\033[0m $1"
-}
+# ログ関数のエイリアス（後方互換性のため）
+log_info() { log "INFO" "$1" "AGENT"; }
+log_error() { log "ERROR" "$1" "ERROR"; }
+log_success() { log "SUCCESS" "$1" "SUCCESS"; }
+log_warn() { log "WARN" "$1" "WARN"; }
 
-log_error() {
-    echo -e "\033[1;31m[ERROR]\033[0m $1"
-}
-
-log_success() {
-    echo -e "\033[1;34m[SUCCESS]\033[0m $1"
-}
-
-log_warn() {
-    echo -e "\033[1;33m[WARN]\033[0m $1"
-}
-
-# エージェントタイプ定義
-declare -A AGENT_COMMANDS=(
-    ["claude"]="claude --dangerously-skip-permissions"
-    ["gemini"]="gemini"
-    ["gpt"]="gpt"
-    ["python"]="python3"
-    ["bash"]="bash"
-)
-
-# エージェントタイプ説明
-declare -A AGENT_DESCRIPTIONS=(
-    ["claude"]="Claude Code - 汎用AI開発環境"
-    ["gemini"]="Gemini CLI - 画像生成・マルチモーダル"
-    ["gpt"]="GPT CLI - OpenAI モデル"
+# エージェントタイプ定義は共通設定から取得
+# AGENT_COMMANDS と AGENT_DESCRIPTIONS は config.sh で定義済み
     ["python"]="Python インタープリタ"
     ["bash"]="Bash シェル"
 )
@@ -55,7 +32,7 @@ declare -A AGENT_DESCRIPTIONS=(
 # ペイン番号取得（汎用的）
 get_pane_number() {
     local input="$1"
-    local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+    local pane_count=$(get_pane_count)
     
     # 数値チェック
     if [[ "$input" =~ ^[0-9]+$ ]]; then
@@ -216,7 +193,7 @@ check_agent_status() {
         echo "--------------------------------------------"
         
         # 実際に存在するペインを動的に取得
-        local pane_list=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | sort -n)
+        local pane_list=$(get_all_panes)
         local pane_count=$(echo "$pane_list" | wc -w)
         
         for i in $pane_list; do
@@ -337,7 +314,7 @@ batch_start() {
     local target_panes=()
     if [ "$panes" = "all" ]; then
         # 全てのペインを番号で指定（汎用的）
-        local pane_count=$(tmux list-panes -t multiagent -F "#{pane_index}" 2>/dev/null | wc -l)
+        local pane_count=$(get_pane_count)
         for ((i=0; i<pane_count; i++)); do
             target_panes+=("$i")
         done
