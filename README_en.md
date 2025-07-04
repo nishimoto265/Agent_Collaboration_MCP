@@ -90,7 +90,7 @@ npm install
 
 **Simple method (using CLI)**:
 ```bash
-claude mcp add agent-collaboration npx agent-collaboration-mcp
+claude mcp add agent-collaboration npx agent-collaboration-mcp@latest
 ```
 
 **Or, using JSON configuration**:
@@ -101,7 +101,7 @@ claude mcp add agent-collaboration npx agent-collaboration-mcp
   "mcpServers": {
     "agent-collaboration": {
       "command": "npx",
-      "args": ["agent-collaboration-mcp"]
+      "args": ["agent-collaboration-mcp@latest"]
     }
   }
 }
