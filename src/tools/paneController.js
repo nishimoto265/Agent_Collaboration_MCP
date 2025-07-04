@@ -2,6 +2,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const path = require('path');
+const { parseTarget, formatOutput } = require('../utils/tmuxUtils');
 
 class PaneController {
   constructor(config = {}) {
@@ -23,31 +24,16 @@ class PaneController {
     }
   }
 
-  // tmux target文字列を解析
-  parseTarget(target) {
-    const match = target.match(/^([^:]+):([^.]+)\.(.+)$/);
-    if (!match) {
-      throw new Error(`Invalid tmux target format: "${target}". Expected format: "session:window.pane" (e.g., "multiagent:0.5")`);
-    }
-    
-    const [_, sessionName, windowNumber, paneNumber] = match;
-    return {
-      sessionName,
-      windowNumber,
-      paneNumber,
-      fullTarget: target
-    };
-  }
 
   async sendMessage(target, message, sendEnter = true) {
     try {
-      const { paneNumber } = this.parseTarget(target);
+      const { paneNumber } = parseTarget(target);
       // Escape special characters in message
       const escapedMessage = message.replace(/'/g, "'\\''");
       const enterFlag = sendEnter ? '' : 'false';
       const cmd = `${this.scriptPath} send ${paneNumber} '${escapedMessage}' ${enterFlag}`.trim();
       const { stdout, stderr } = await execAsync(cmd, { cwd: this.projectDir });
-      return this.formatOutput(stdout, stderr);
+      return formatOutput(stdout, stderr);
     } catch (error) {
       throw new Error(`Failed to send message: ${error.message}`);
     }
@@ -55,7 +41,7 @@ class PaneController {
 
   async captureScreen(target, lines = '') {
     try {
-      const { paneNumber } = this.parseTarget(target);
+      const { paneNumber } = parseTarget(target);
       // Build command - if lines specified, pass as argument to capture command
       let cmd;
       if (lines && lines > 0) {
@@ -80,19 +66,6 @@ class PaneController {
   }
 
 
-  formatOutput(stdout, stderr) {
-    // Remove ANSI color codes for cleaner output in Claude
-    const cleanOutput = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
-    
-    let output = '';
-    if (stdout) {
-      output += cleanOutput(stdout);
-    }
-    if (stderr && !stderr.includes('[INFO]') && !stderr.includes('[SUCCESS]')) {
-      output += '\n' + cleanOutput(stderr);
-    }
-    return output.trim();
-  }
 }
 
 module.exports = { PaneController };

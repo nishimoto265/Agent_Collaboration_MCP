@@ -103,17 +103,6 @@ get_all_panes() {
     tmux list-panes -t "$session" -F "#{pane_index}" 2>/dev/null | sort -n
 }
 
-# エラーハンドリング付きコマンド実行
-safe_execute() {
-    local command="$1"
-    local error_message="${2:-Command failed}"
-    
-    if ! eval "$command"; then
-        log "ERROR" "$error_message"
-        return 1
-    fi
-    return 0
-}
 
 # ペイン名取得（tmuxペインタイトルから動的に取得）
 get_pane_name() {
@@ -152,64 +141,6 @@ capture_pane_content() {
     tmux capture-pane -t "$target" -p $lines 2>/dev/null || echo ""
 }
 
-# プロセスの存在確認
-is_process_running() {
-    local pane="$1"
-    local process_pattern="$2"
-    local content=$(capture_pane_content "$pane" "-10")
-    
-    echo "$content" | grep -q "$process_pattern"
-}
 
-# 画面の変化検出
-detect_screen_change() {
-    local pane="$1"
-    local timeout="${2:-$DEFAULT_WAIT_TIMEOUT}"
-    local check_interval="${3:-1}"
-    
-    local initial_content=$(capture_pane_content "$pane" "-10")
-    local elapsed=0
-    
-    while [ $elapsed -lt $timeout ]; do
-        delay "$check_interval"
-        local current_content=$(capture_pane_content "$pane" "-10")
-        
-        if [ "$current_content" != "$initial_content" ]; then
-            return 0
-        fi
-        
-        elapsed=$((elapsed + check_interval))
-    done
-    
-    return 1
-}
 
-# タイムスタンプ付きログファイル名生成
-generate_log_filename() {
-    local prefix="${1:-log}"
-    local extension="${2:-log}"
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    
-    echo "${prefix}_${timestamp}.${extension}"
-}
 
-# 設定値の検証
-validate_config() {
-    local errors=0
-    
-    # セッション存在確認
-    if ! check_session_exists; then
-        log "ERROR" "TMUXセッション '$TMUX_SESSION' が存在しません"
-        ((errors++))
-    fi
-    
-    # 必要なディレクトリの確認
-    for dir in "$MCP_DIR" "$SCRIPTS_DIR"; do
-        if [ ! -d "$dir" ]; then
-            log "ERROR" "ディレクトリが存在しません: $dir"
-            ((errors++))
-        fi
-    done
-    
-    return $errors
-}

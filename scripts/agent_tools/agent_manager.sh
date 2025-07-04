@@ -26,25 +26,7 @@ log_warn() { log "WARN" "$1" "WARN"; }
 # エージェントタイプ定義は共通設定から取得
 # AGENT_COMMANDS と AGENT_DESCRIPTIONS は config.sh で定義済み
 
-# ペイン番号取得（汎用的）
-get_pane_number() {
-    local input="$1"
-    local pane_count=$(get_pane_count)
-    
-    # 数値チェック
-    if [[ "$input" =~ ^[0-9]+$ ]]; then
-        # 有効範囲チェック
-        if [ "$input" -lt "$pane_count" ]; then
-            echo "$input"
-        else
-            echo ""
-        fi
-        return
-    fi
-    
-    # 名前は使用しない（ペイン番号のみ使用）
-    echo ""
-}
+# ペイン番号取得は共通ライブラリのget_pane_number()を使用
 
 # 画面から直接エージェント状態を取得
 get_agent_state() {

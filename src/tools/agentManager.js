@@ -3,6 +3,7 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const path = require('path');
 const fs = require('fs');
+const { parseTarget, formatOutput } = require('../utils/tmuxUtils');
 
 class AgentManager {
   constructor(config = {}) {
@@ -28,34 +29,23 @@ class AgentManager {
       this.authHelperPath = path.join(this.projectDir, scriptDir, 'auth_helper.sh');
       console.error(`Using external project scripts: ${this.scriptPath}`);
     }
+    console.error(`[DEBUG] AgentManager initialized:
+      - projectDir: ${this.projectDir}
+      - scriptPath: ${this.scriptPath}
+      - authHelperPath: ${this.authHelperPath}`);
   }
 
-  // tmux target文字列を解析
-  parseTarget(target) {
-    const match = target.match(/^([^:]+):([^.]+)\.(.+)$/);
-    if (!match) {
-      throw new Error(`Invalid tmux target format: "${target}". Expected format: "session:window.pane" (e.g., "multiagent:0.5")`);
-    }
-    
-    const [_, sessionName, windowNumber, paneNumber] = match;
-    return {
-      sessionName,
-      windowNumber,
-      paneNumber,
-      fullTarget: target
-    };
-  }
 
 
   async startAgent(target, agentType = 'claude', additionalArgs = '') {
     try {
-      const { paneNumber } = this.parseTarget(target);
+      const { paneNumber } = parseTarget(target);
       const cmd = `${this.scriptPath} start ${paneNumber} ${agentType} ${additionalArgs}`.trim();
       const { stdout, stderr } = await execAsync(cmd, { 
         cwd: this.projectDir,
         timeout: 350000 // 350秒（約6分）- agent_manager.shの300秒待機 + 余裕
       });
-      return this.formatOutput(stdout, stderr);
+      return formatOutput(stdout, stderr);
     } catch (error) {
       throw new Error(`Failed to start agent: ${error.message}`);
     }
@@ -70,7 +60,7 @@ class AgentManager {
       
       if (target && !target.includes('*')) {
         // 特定ペインの詳細状態
-        const { sessionName, windowNumber, paneNumber, fullTarget } = this.parseTarget(target);
+        const { sessionName, windowNumber, paneNumber, fullTarget } = parseTarget(target);
         
         // ペイン画面内容をキャプチャ（pane_controller.sh経由）
         let screenContent = '';
@@ -221,19 +211,6 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
   }
 
 
-  formatOutput(stdout, stderr) {
-    // Remove ANSI color codes for cleaner output in Claude
-    const cleanOutput = (str) => str.replace(/\x1b\[[0-9;]*m/g, '');
-    
-    let output = '';
-    if (stdout) {
-      output += cleanOutput(stdout);
-    }
-    if (stderr && !stderr.includes('[INFO]') && !stderr.includes('[SUCCESS]')) {
-      output += '\n' + cleanOutput(stderr);
-    }
-    return output.trim();
-  }
 }
 
 module.exports = { AgentManager };
