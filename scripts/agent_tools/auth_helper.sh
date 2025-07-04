@@ -71,7 +71,24 @@ detect_agent_state() {
     # 以下、全ての検出は正規化済みの compact_lower を使用
     # =================================================================
     
-    # 優先度1: Claude実行中の検出（最優先）
+    # 優先度0: Claudeプロンプトが表示されている場合（最優先）
+    # プロンプト（>）と「for shortcuts」または「Bypassing」が同時に存在する場合は起動完了
+    local has_prompt=$(echo "$screen" | grep -q "> *$" && echo "yes" || echo "no")
+    local has_shortcuts=$(echo "$compact_lower" | grep -q "forshortcuts\|bypassingpermissions" && echo "yes" || echo "no")
+    # echo "[DEBUG] has_prompt=$has_prompt, has_shortcuts=$has_shortcuts" >&2
+    
+    if [ "$has_prompt" = "yes" ] && [ "$has_shortcuts" = "yes" ]; then
+        echo "running_claude|claude|Claude起動完了"
+        return 0
+    fi
+    
+    # プロンプトボックスが表示されている場合も起動完了
+    if echo "$screen" | grep -q "╭─.*─╮" && echo "$screen" | grep -q "│ >" && echo "$screen" | grep -q "╰─.*─╯"; then
+        echo "running_claude|claude|Claude起動完了"
+        return 0
+    fi
+    
+    # 優先度1: Claude実行中の検出
     if echo "$compact_lower" | grep -q "esctointerrupt"; then
         echo "executing_claude|claude|Claude実行中"
         return 0
@@ -103,8 +120,18 @@ detect_agent_state() {
         return 0
     fi
     
+    if echo "$compact_lower" | grep -q "pastecodehere.*prompted"; then
+        echo "auth_claude|claude|Claude認証中 - コード入力待機|code_input"
+        return 0
+    fi
+    
     if echo "$compact_lower" | grep -q "selectlogin\|claudeaccountwithsubscription\|anthropicconsoleaccount"; then
         echo "auth_claude|claude|Claude認証中 - ログイン方法選択|login_selection"
+        return 0
+    fi
+    
+    if echo "$compact_lower" | grep -q "pastecodehere.*prompted"; then
+        echo "auth_claude|claude|Claude認証中 - コード入力画面|code_input"
         return 0
     fi
     
@@ -210,6 +237,8 @@ check_agent_state() {
                 echo "theme_selection"
             elif echo "$details" | grep -q "ブラウザ認証待機"; then
                 echo "browser_auth"
+            elif echo "$details" | grep -q "コード入力"; then
+                echo "code_input"
             else
                 echo "starting"
             fi
@@ -344,6 +373,8 @@ wait_for_agent_startup() {
                 auth_type="login_selection"
             elif echo "$details" | grep -q "ブラウザ認証待機"; then
                 auth_type="browser_auth"
+            elif echo "$details" | grep -q "コード入力"; then
+                auth_type="code_input"
             fi
         fi
         
@@ -386,8 +417,12 @@ wait_for_agent_startup() {
                             tmux send-keys -t "$(get_tmux_target $pane)" C-m
                             sleep 2
                             ;;
-                        "browser_auth")
-                            log_info "ブラウザ認証画面検出 - 自動認証代行開始"
+                        "browser_auth"|"code_input")
+                            if [[ "$auth_type" == "browser_auth" ]]; then
+                                log_info "ブラウザ認証画面検出 - 自動認証代行開始"
+                            else
+                                log_info "コード入力画面検出 - 自動認証代行開始"
+                            fi
                             # 認証済みのペインを探す
                             local auth_pane=""
                             local pane_list=$(get_all_panes)
