@@ -99,6 +99,9 @@ start_agent() {
     # エージェントタイプ別の認証・起動確認
     log_info "$agent_type 認証/起動プロセスを監視中..."
     
+    # プロセスが起動するまで少し待つ
+    sleep 2
+    
     # Geminiの場合は認証状態を定期的にチェック
     if [ "$agent_type" = "gemini" ]; then
         # 一旦認証待機状態をチェック
