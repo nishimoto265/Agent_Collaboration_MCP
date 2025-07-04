@@ -115,6 +115,28 @@ safe_execute() {
     return 0
 }
 
+# ペイン名取得（tmuxペインタイトルから動的に取得）
+get_pane_name() {
+    local pane_num="${1:-}"
+    local session="${2:-$TMUX_SESSION}"
+    local window="${3:-$TMUX_WINDOW}"
+    
+    if [ -z "$pane_num" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # tmuxのペインタイトルを取得
+    local pane_title=$(tmux display-message -t "${session}:${window}.${pane_num}" -p '#{pane_title}' 2>/dev/null || echo "")
+    
+    # デフォルトのシェル名（bash, zsh等）の場合は空文字列を返す
+    if [ -z "$pane_title" ] || [ "$pane_title" = "bash" ] || [ "$pane_title" = "zsh" ] || [ "$pane_title" = "sh" ]; then
+        echo ""
+    else
+        echo "$pane_title"
+    fi
+}
+
 # 遅延実行
 delay() {
     local delay_time="${1:-$SHORT_DELAY}"

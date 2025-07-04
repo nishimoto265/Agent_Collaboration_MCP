@@ -14,15 +14,18 @@ class AgentManager {
     const mcpDir = path.dirname(path.dirname(__dirname)); // Get MCP root directory
     const internalScriptPath = path.join(mcpDir, 'scripts', 'agent_tools', 'agent_manager.sh');
     const internalPaneControllerPath = path.join(mcpDir, 'scripts', 'agent_tools', 'pane_controller.sh');
+    const internalAuthHelperPath = path.join(mcpDir, 'scripts', 'agent_tools', 'auth_helper.sh');
     
     // Use internal scripts if they exist, otherwise fallback to project scripts
     if (fs.existsSync(internalScriptPath)) {
       this.scriptPath = internalScriptPath;
       this.paneControllerPath = internalPaneControllerPath;
+      this.authHelperPath = internalAuthHelperPath;
       console.error(`Using internal MCP scripts: ${internalScriptPath}`);
     } else {
       this.scriptPath = path.join(this.projectDir, scriptDir, 'agent_manager.sh');
       this.paneControllerPath = path.join(this.projectDir, scriptDir, 'pane_controller.sh');
+      this.authHelperPath = path.join(this.projectDir, scriptDir, 'auth_helper.sh');
       console.error(`Using external project scripts: ${this.scriptPath}`);
     }
   }
@@ -43,157 +46,6 @@ class AgentManager {
     };
   }
 
-  // 画面内容からエージェント状態を判定（auth_helper.shのロジックを流用）
-  analyzeAgentState(screenContent) {
-    console.error('[DEBUG] ===== analyzeAgentState CALLED =====');
-    if (!screenContent || screenContent.trim() === '') {
-      console.error('[DEBUG] Empty screen content, returning stopped');
-      return { state: 'stopped', agent: 'none', details: '停止中' };
-    }
-
-    // 画面内容を正規化（改行をスペースに置換して連続スペースを単一に）
-    const normalizedContent = screenContent.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-    const content = screenContent.toLowerCase();
-    const normalizedLower = normalizedContent.toLowerCase();
-    
-    console.error('[DEBUG] Screen content (first 200 chars):', screenContent.slice(0, 200));
-    console.error('[DEBUG] Screen content (last 200 chars):', screenContent.slice(-200));
-
-    // 🔍 優先度0: 最優先 - 画面の最後の有効な行に「$」が含まれていれば停止中
-    // 空でない最後の行を取得
-    const lines = screenContent.split('\n');
-    let lastValidLine = '';
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].trim()) {
-        lastValidLine = lines[i].toLowerCase();
-        break;
-      }
-    }
-    
-    console.error('[DEBUG] Last valid line:', lastValidLine);
-    console.error('[DEBUG] Last valid line includes $:', lastValidLine.includes('$'));
-    
-    // 最後の有効な行がシェルプロンプトで終わっている場合のみ停止中と判定
-    if (lastValidLine.match(/\$\s*$/)) {
-      console.error('[DEBUG] $ at end of last line detected! Returning stopped state');
-      return { state: 'stopped', agent: 'none', details: '停止中（シェルプロンプト）' };
-    }
-
-    // 🔍 優先度1: Claude実行中（ESC to interrupt表示）
-    if (content.includes('esc to interrupt') || content.includes('escape to interrupt')) {
-      return { state: 'executing_claude', agent: 'claude', details: 'Claude実行中' };
-    }
-
-    // 🔍 優先度2: ログアウト済み（停止状態）
-    if (normalizedLower.includes('successfully logged out') ||
-        (content.includes('$') && normalizedLower.includes('logged out')) ||
-        (content.includes('Successfully logged out') && content.includes('$'))) {
-      return { state: 'stopped', agent: 'none', details: '停止中（ログアウト済み）' };
-    }
-    
-    // 🔍 優先度2.5: AUTH-HELPERプロンプト（停止状態）
-    if (content.includes('(auth-helper)') || content.includes('(AUTH-HELPER)')) {
-      return { state: 'stopped', agent: 'none', details: '停止中（AUTH-HELPER）' };
-    }
-
-    // 🔍 優先度3: Claude起動完了（複合条件で判定）
-    // /help for helpとBypassing Permissionsが同時に表示されている場合（ターミナル設定画面があっても）
-    if ((content.includes('/help for help') || normalizedLower.includes('/help for help')) &&
-        ((content.includes('bypassing') && content.includes('permissions')) || 
-         (content.includes('Bypassing') && content.includes('Permissions')))) {
-      console.error('[DEBUG] Claude起動完了と判定: /help for help + Bypassing Permissions');
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-
-    // /help for helpパターン（認証URLが無い場合は起動完了）
-    if ((content.includes('/help for help') && content.includes('current setup')) ||
-        (content.includes('/help for help') && content.includes('for your current setup')) ||
-        (normalizedLower.includes('/help for help') && normalizedLower.includes('current setup'))) {
-      // 認証関連のURLやプロンプトが表示されていない場合
-      if (!content.includes('claude.ai/oauth/authorize') && 
-          !content.includes('paste code here') &&
-          !content.includes('oauth error') &&
-          !content.includes('browser didn\'t open')) {
-        return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-      }
-    }
-    
-    // その他のClaude起動完了パターン
-    if ((content.includes('how can i help') || content.includes('try "edit') || content.includes('tip:')) && 
-        !content.includes('preview') && 
-        !content.includes('console.log') && 
-        !content.includes('press enter to continue') && 
-        !content.includes('esc to interrupt') &&
-        !content.includes('(auth-helper)') && !content.includes('(AUTH-HELPER)')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-
-    // Bypassing Permissionsパターン（単独で表示されている場合のみ）
-    if (((content.includes('bypassing') && content.includes('permissions')) ||
-         (content.includes('Bypassing') && content.includes('Permissions'))) &&
-        content.includes('>') &&
-        !content.includes('paste code here') &&
-        !content.includes('esc to interrupt')) {
-      return { state: 'running_claude', agent: 'claude', details: 'Claude起動完了' };
-    }
-
-    // 🔍 優先度4: Claude認証中
-    if (content.includes('select login method') || 
-        content.includes('claude account with subscription') ||
-        content.includes('anthropic console account') ||
-        content.includes('paste code here if prompted') ||
-        content.includes('browser didn\'t open') ||
-        content.includes('use the url below') ||
-        content.includes('claude.ai/oauth/authorize') ||
-        content.includes('press enter to continue') ||
-        content.includes('press enter to retry') ||
-        content.includes('security notes') ||
-        content.includes('login successful') ||
-        content.includes('logged in as') ||
-        content.includes('oauth error') ||
-        content.includes('paste code here') ||
-        (content.includes('dangerous') && content.includes('yes, i accept')) ||
-        (content.includes('use claude code\'s terminal setup') && !content.includes('/help for help')) ||
-        (content.includes('choose the text style') && content.includes('preview')) ||
-        (content.includes('preview') && (content.includes('dark mode') || content.includes('light mode')))) {
-      return { state: 'auth_claude', agent: 'claude', details: 'Claude認証中' };
-    }
-
-    // 🔍 優先度5: Gemini認証中
-    if (content.includes('waiting for auth') ||
-        content.includes('login with google') || 
-        content.includes('vertex ai') ||
-        content.includes('gemini api key')) {
-      return { state: 'auth_gemini', agent: 'gemini', details: 'Gemini認証中' };
-    }
-
-    // 🔍 優先度6: Gemini起動完了（auth_helper.shのcheck_gemini_startupロジック）
-    if ((content.includes('type your message') || normalizedLower.includes('type your message')) && 
-        !content.includes('waiting for auth')) {
-      return { state: 'running_gemini', agent: 'gemini', details: 'Gemini起動完了' };
-    }
-    
-    // 改行を考慮したGemini検出（gemini-とバージョン番号が分離されている場合）
-    if (content.includes('gemini-2.') || content.includes('gemini-1.') ||
-        (content.includes('gemini-') && (content.includes('2.5-pro') || content.includes('2.0-pro') || content.includes('1.5-pro')))) {
-      return { state: 'running_gemini', agent: 'gemini', details: 'Gemini起動完了' };
-    }
-    
-    if (content.includes('/help') && content.includes('information') && !content.includes('waiting for auth')) {
-      return { state: 'running_gemini', agent: 'gemini', details: 'Gemini起動完了' };
-    }
-
-    // 🔍 優先度7: 停止中（エージェントなし）
-    // Bashプロンプトのみの場合
-    if ((content.match(/.*[$#]\s*$/) || content.includes('bash') || content.includes('sh-')) &&
-        !content.includes('claude') && 
-        !content.includes('gemini')) {
-      return { state: 'stopped', agent: 'none', details: '停止中' };
-    }
-
-    // その他（不明な状態）
-    return { state: 'stopped', agent: 'none', details: '停止中' };
-  }
 
   async startAgent(target, agentType = 'claude', additionalArgs = '') {
     try {
@@ -220,10 +72,10 @@ class AgentManager {
         // 特定ペインの詳細状態
         const { sessionName, windowNumber, paneNumber, fullTarget } = this.parseTarget(target);
         
-        // ペイン画面内容をキャプチャ
+        // ペイン画面内容をキャプチャ（pane_controller.sh経由）
         let screenContent = '';
         try {
-          const { stdout } = await execAsync(`tmux capture-pane -t ${fullTarget} -p -S -3000`, { 
+          const { stdout } = await execAsync(`${this.paneControllerPath} capture ${paneNumber} -3000`, { 
             cwd: this.projectDir,
             timeout: 5000
           });
@@ -232,9 +84,21 @@ class AgentManager {
           screenContent = `キャプチャエラー: ${captureError.message}`;
         }
 
-        // 状態分析
-        console.error(`[DEBUG] Analyzing pane ${fullTarget}, content length: ${screenContent.length}`);
-        const analysis = this.analyzeAgentState(screenContent);
+        // auth_helper.shを使って状態を取得
+        console.error(`[DEBUG] Getting state for pane ${paneNumber}`);
+        let analysis;
+        try {
+          const { stdout: stateResult } = await execAsync(`${this.authHelperPath} state ${paneNumber}`, {
+            cwd: this.projectDir,
+            timeout: 3000
+          });
+          
+          // 結果をパース: "state|agent|details"
+          const [state, agent, details] = stateResult.trim().split('|');
+          analysis = { state, agent, details };
+        } catch (stateError) {
+          analysis = { state: 'unknown', agent: 'none', details: `状態取得エラー: ${stateError.message}` };
+        }
         console.error(`[DEBUG] Analysis result for ${fullTarget}:`, analysis);
         
         result = `🔍 Target ${fullTarget} の詳細状態:
@@ -259,9 +123,14 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
         
         const stateSummary = { running_claude: 0, running_gemini: 0, auth_claude: 0, auth_gemini: 0, executing_claude: 0, stopped: 0 };
         
-        // tmuxセッションのペイン一覧を取得
+        // ペイン一覧を取得（共通ライブラリの関数を使用）
         try {
-          const { stdout: paneList } = await execAsync(`tmux list-panes -t ${sessionName} -F "#{pane_index}"`, {
+          // get_all_panes関数を呼び出し（MCPディレクトリを考慮）
+          const mcpDir = path.dirname(path.dirname(__dirname)); // MCP root directory
+          const utilsPath = fs.existsSync(path.join(mcpDir, 'scripts', 'common', 'utils.sh')) 
+            ? path.join(mcpDir, 'scripts', 'common', 'utils.sh')
+            : path.join(this.projectDir, 'scripts', 'common', 'utils.sh');
+          const { stdout: paneList } = await execAsync(`bash -c 'source "${utilsPath}" && setup_directories "." >&2 && get_all_panes "${sessionName}"'`, {
             cwd: this.projectDir,
             timeout: 5000
           });
@@ -272,35 +141,36 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
             const currentTarget = `${sessionName}:0.${paneNum}`;
             
             try {
-              const { stdout } = await execAsync(`tmux capture-pane -t ${currentTarget} -p -S -3000`, { 
+              // auth_helper.shを使って状態を取得
+              const { stdout: stateResult } = await execAsync(`${this.authHelperPath} state ${paneNum}`, {
                 cwd: this.projectDir,
                 timeout: 3000
               });
               
-              const analysis = this.analyzeAgentState(stdout);
-              stateSummary[analysis.state]++;
+              // 結果をパース: "state|agent|details"
+              const [state, agent, details] = stateResult.trim().split('|');
+              const analysis = { state, agent, details };
+              stateSummary[analysis.state] = (stateSummary[analysis.state] || 0) + 1;
               
-              // 空でない最後の行を取得
-              const lines = stdout.split('\n');
-              let lastLine = '(empty)';
-              for (let i = lines.length - 1; i >= 0; i--) {
-                if (lines[i].trim()) {
-                  lastLine = lines[i].slice(0, 50);
-                  break;
-                }
+              // ペイン名を取得（共通ライブラリの関数を使用）
+              let paneName = '';
+              try {
+                const { stdout: nameResult } = await execAsync(`bash -c 'source "${utilsPath}" && get_pane_name ${paneNum}'`, {
+                  cwd: this.projectDir,
+                  timeout: 1000
+                });
+                paneName = nameResult.trim();
+              } catch (nameErr) {
+                // エラーの場合は空文字列のまま
               }
               
-              // ペイン名を取得（tmuxペインタイトルから）
-              const [_, windowPane] = currentTarget.split(':');
-              const [windowNum, paneNum] = windowPane.split('.');
-              const paneName = await this.getPaneName(sessionName, windowNum, paneNum);
               const targetDisplay = paneName ? `${currentTarget} (${paneName})` : currentTarget;
               
-              result += `${this.getStateIcon(analysis.state)} ${targetDisplay.padEnd(30)} | ${analysis.agent.padEnd(8)} | ${analysis.state.padEnd(12)} | ${lastLine}\n`;
+              result += `${this.getStateIcon(analysis.state)} ${targetDisplay.padEnd(40)} | ${analysis.agent.padEnd(8)} | ${analysis.state.padEnd(12)}\n`;
               
             } catch (error) {
               stateSummary.stopped++;
-              result += `❌ ${currentTarget.padEnd(30)} | error    | capture_fail | キャプチャエラー\n`;
+              result += `❌ ${currentTarget.padEnd(40)} | error    | capture_fail\n`;
             }
           }
         } catch (sessionError) {
@@ -324,22 +194,13 @@ ${screenContent.split('\n').slice(-20).join('\n')}`;
     }
   }
 
-  // ペイン番号→名前変換（tmuxペインタイトルから取得）
+  // ペイン番号→名前変換
   async getPaneName(sessionName, windowNumber, paneNumber) {
     try {
-      // tmuxのペインタイトルを取得
-      const { stdout } = await execAsync(
-        `tmux display-message -t ${sessionName}:${windowNumber}.${paneNumber} -p '#{pane_title}'`,
-        { timeout: 1000 }
-      );
-      
-      const title = stdout.trim();
-      // デフォルトのシェル名（bash, zshなど）の場合は空文字列を返す
-      if (title === 'bash' || title === 'zsh' || title === 'sh' || title === '') {
-        return '';
-      }
-      
-      return title;
+      // pane_controller.shのstatus機能を使用してペイン名を取得
+      // 現在はペインタイトルを使用していないため、空文字列を返す
+      // 将来的にペイン名機能を追加する場合はここで実装
+      return '';
     } catch (error) {
       // エラーの場合は空文字列を返す
       return '';

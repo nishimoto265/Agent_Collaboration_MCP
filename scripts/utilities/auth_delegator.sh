@@ -210,22 +210,15 @@ find_auth_helper_pane() {
         return 1
     fi
     
-    # 存在するペインのみをチェックしてauthenticatedを探す
+    # 存在するペインのみをチェックしてClaudeの認証済みを探す
     for i in $pane_list; do
-        # auth_helper.shのcheckコマンドを使用
-        local state=$("$AUTH_HELPER" check "$i" 2>/dev/null | grep -o "authenticated")
+        # auth_helper.shのstateコマンドを使用して詳細な状態を取得
+        local state_result=$("$AUTH_HELPER" state "$i" 2>/dev/null || echo "")
+        local state=$(echo "$state_result" | cut -d'|' -f1)
+        local agent=$(echo "$state_result" | cut -d'|' -f2)
         
-        if [ "$state" = "authenticated" ]; then
-            # 追加チェック：シェルプロンプト状態でないことを確認
-            local screen=$("$PANE_CONTROLLER" capture "$i" 2>/dev/null || echo "")
-            local last_lines=$(echo "$screen" | tail -3 | tr '[:upper:]' '[:lower:]')
-            
-            # 最下部がシェルプロンプトの場合はスキップ（MCPと同じロジック）
-            if echo "$last_lines" | grep -qE '.*[\$#]\s*$' && \
-               echo "$last_lines" | grep -qE 'org-|pane-|agent-'; then
-                continue  # シェル状態なのでスキップ
-            fi
-            
+        # Claudeが起動完了または実行中の状態をチェック
+        if [[ "$agent" == "claude" ]] && [[ "$state" == "running_claude" || "$state" == "executing_claude" ]]; then
             log_delegator "✅ ペイン$i で認証済みClaude検出" >&2
             echo "$i"
             return 0
@@ -246,10 +239,6 @@ delegate_auth_to_auth_helper() {
         log_error "セッション '$TMUX_SESSION' に最低2つのペインが必要です"
         return 1
     fi
-    
-    # 最後から2番目をauth_helperとして使用
-    local auth_helper_pane=$((pane_count - 2))
-    local auth_helper_target=$(get_tmux_target "$auth_helper_pane")
     
     log_delegator "🔧 DEBUG: delegate_auth_to_auth_helper called with args: $@"
     log_delegator "🔧 DEBUG: target_pane='$target_pane'"
