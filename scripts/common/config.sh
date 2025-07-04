@@ -47,7 +47,7 @@ setup_directories() {
     # スクリプトディレクトリから相対的にMCPディレクトリを計算
     local script_dir="$1"
     export MCP_DIR="$(cd "$script_dir/../.." && pwd)"
-    export PROJECT_DIR="$(cd "$MCP_DIR/../.." && pwd)"
+    export PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
     
     # スクリプトパス
     export SCRIPTS_DIR="$MCP_DIR/scripts"
