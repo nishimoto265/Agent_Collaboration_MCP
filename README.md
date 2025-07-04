@@ -77,7 +77,7 @@ capture_screen(target="multiagent:0.3", lines=50) // 最後の50行
 
 **npm経由（推奨）**:
 ```bash
-npm install -g agent-collaboration-mcp
+npm install -g agent-collaboration-mcp@latest
 ```
 
 **GitHubから直接**:

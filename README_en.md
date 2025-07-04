@@ -76,7 +76,7 @@ Capture screen content from panes.
 
 **Via npm (Recommended)**:
 ```bash
-npm install -g agent-collaboration-mcp
+npm install -g agent-collaboration-mcp@latest
 ```
 
 **From GitHub**:
