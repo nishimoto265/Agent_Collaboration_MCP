@@ -133,6 +133,12 @@ start_parallel_implementation() {
     fi
     
     # セッション情報を保存
+    # worker_panesの配列を安全に生成
+    local worker_panes_json=""
+    if [ ${#worker_panes[@]} -gt 0 ]; then
+        worker_panes_json=$(printf '"%s",' "${worker_panes[@]}" | sed 's/,$//')
+    fi
+    
     cat > "$session_file" <<EOF
 {
     "session_id": "$session_id",
@@ -143,7 +149,7 @@ start_parallel_implementation() {
     "skip_review": $skip_review,
     "needs_boss": $needs_boss,
     "boss_pane": "$boss_pane",
-    "worker_panes": [$(printf '"%s",' "${worker_panes[@]}" | sed 's/,$//')],
+    "worker_panes": [$worker_panes_json],
     "worktree_info": $(echo "$worktree_info" | jq -c .),
     "tmux_session": "${MULTIAGENT_SESSION}",
     "use_new_terminal": $use_new_terminal,
@@ -365,7 +371,13 @@ monitor_worker_completion() {
     local completion_rate=$((${#completed_workers[@]} * 100 / ${#worker_panes[@]}))
     
     # ステータスを更新
-    jq --argjson completed "[$(printf '%s,' "${completed_workers[@]}" | sed 's/,$//')]" \
+    # completed_workersの配列を安全に生成
+    local completed_workers_json=""
+    if [ ${#completed_workers[@]} -gt 0 ]; then
+        completed_workers_json=$(printf '%s,' "${completed_workers[@]}" | sed 's/,$//')
+    fi
+    
+    jq --argjson completed "[$completed_workers_json]" \
        --arg rate "$completion_rate" \
        '.completed_workers = $completed | .completion_rate = $rate' \
        "$session_file" > "${session_file}.tmp" && mv "${session_file}.tmp" "$session_file"
