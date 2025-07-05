@@ -231,7 +231,9 @@ $prompt
             sleep 1
             # agent_manager.shのパスを正しく設定
             local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
-            if [ -f "$agent_manager" ]; then
+            local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
+            
+            if [ -f "$agent_manager" ] && [ -f "$auth_helper" ]; then
                 # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
                 local pane_number="${pane##*.}"
                 log_info "$agent_type を起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $pane_number)"
@@ -242,25 +244,18 @@ $prompt
                     "$agent_manager" start "$pane_number" "$agent_type"
                 )
                 
-                # pane_controller.shのパスを設定
-                local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
-                
-                # エージェント起動を待つ（最大60秒）
-                local wait_count=0
-                while [ $wait_count -lt 60 ]; do
-                    sleep 1
-                    wait_count=$((wait_count + 1))
-                    
-                    # Claudeプロンプトが表示されているか確認
-                    local screen_content=$(tmux capture-pane -t "$pane" -p 2>/dev/null | tail -20)
-                    if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
-                        log_info "Worker $((i+1)) 起動完了確認 - タスクを送信中..."
-                        # pane_controller.shを使ってメッセージを送信
-                        export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                        "$pane_controller" send "$pane_number" "$worker_prompt"
-                        break
-                    fi
-                done
+                # auth_helper.shを使って起動完了を待つ
+                log_info "Worker $((i+1)) 起動待機中..."
+                if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$pane_number" 60 "$agent_type"; then
+                    log_info "Worker $((i+1)) 起動完了確認 - タスクを送信中..."
+                    # pane_controller.shのパスを設定
+                    local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
+                    # pane_controller.shを使ってメッセージを送信
+                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                    "$pane_controller" send "$pane_number" "$worker_prompt"
+                else
+                    log_error "Worker $((i+1)) 起動タイムアウト"
+                fi
             else
                 log_error "agent_manager.shが見つかりません: $agent_manager"
             fi
@@ -352,22 +347,17 @@ done)
                 # pane_controller.shのパスを設定
                 local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
                 
-                # エージェント起動を待つ（最大60秒）
-                local wait_count=0
-                while [ $wait_count -lt 60 ]; do
-                    sleep 1
-                    wait_count=$((wait_count + 1))
-                    
-                    # Claudeプロンプトが表示されているか確認
-                    local screen_content=$(tmux capture-pane -t "$boss_pane" -p 2>/dev/null | tail -20)
-                    if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
-                        log_info "Boss 起動完了確認 - タスクを送信中..."
-                        # pane_controller.shを使ってメッセージを送信
-                        export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                        "$pane_controller" send "$boss_pane_number" "$boss_prompt"
-                        break
-                    fi
-                done
+                # auth_helper.shを使って起動完了を待つ
+                local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
+                log_info "Boss 起動待機中..."
+                if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$boss_pane_number" 60 "$agent_type"; then
+                    log_info "Boss 起動完了確認 - タスクを送信中..."
+                    # pane_controller.shを使ってメッセージを送信
+                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                    "$pane_controller" send "$boss_pane_number" "$boss_prompt"
+                else
+                    log_error "Boss 起動タイムアウト"
+                fi
             else
                 log_error "agent_manager.shが見つかりません: $agent_manager"
             fi
