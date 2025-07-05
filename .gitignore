@@ -9,3 +9,6 @@ package-lock.json
 .mcp.json
 CLAUDE.md
 logs/
+
+# Git worktrees
+worktrees/

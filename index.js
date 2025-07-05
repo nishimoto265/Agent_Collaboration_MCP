@@ -5,6 +5,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const { AgentManager } = require('./src/tools/agentManager.js');
 const { PaneController } = require('./src/tools/paneController.js');
+const ParallelImplementation = require('./src/tools/parallelImplementation');
 const fs = require('fs');
 const path = require('path');
 
@@ -47,6 +48,7 @@ const config = loadConfig();
 // Initialize tool instances with configuration
 const agentManager = new AgentManager(config);
 const paneController = new PaneController(config);
+const parallelImpl = new ParallelImplementation(config.projectDir);
 
 // Create MCP server with proper configuration
 const server = new McpServer({
@@ -125,6 +127,78 @@ server.registerTool('capture_screen', {
   }
 });
 
+// 🚀 6. Parallel Implementation - 並列実装
+server.registerTool('parallel_implement', {
+  title: 'Start Parallel Implementation',
+  description: 'Start parallel implementation with multiple workers',
+  inputSchema: {
+    prompt: z.string().describe('Implementation instructions'),
+    workerCount: z.number().default(3).describe('Number of workers (default: 3)'),
+    complexity: z.enum(['simple', 'medium', 'complex']).default('medium').describe('Task complexity'),
+    autoMerge: z.boolean().default(false).describe('Auto-merge after completion'),
+    agentType: z.enum(['claude', 'gemini']).default('claude').describe('Agent type to use')
+  }
+}, async ({ prompt, workerCount, complexity, autoMerge, agentType }) => {
+  try {
+    const result = await parallelImpl.startParallelImplementation(prompt, workerCount, complexity, autoMerge, true, agentType);
+    if (result.success) {
+      return { 
+        content: [{ 
+          type: 'text', 
+          text: `${result.message}\n\nセッションID: ${result.sessionId}\nワーカー数: ${result.details.workerCount}\n複雑度: ${result.details.complexity}\n\n各Workerにプロンプトが配布されました。進捗は 'get_parallel_status' で確認できます。`
+        }] 
+      };
+    } else {
+      return { content: [{ type: 'text', text: `Error: ${result.error}` }], isError: true };
+    }
+  } catch (error) {
+    return { content: [{ type: 'text', text: `Error: ${error.message}` }], isError: true };
+  }
+});
+
+// 📊 7. Get Parallel Status - 並列実装状態確認
+server.registerTool('get_parallel_status', {
+  title: 'Get Parallel Implementation Status',
+  description: 'Get status of parallel implementation sessions',
+  inputSchema: {
+    sessionId: z.string().optional().describe('Session ID (omit to list all sessions)')
+  }
+}, async ({ sessionId }) => {
+  try {
+    const result = await parallelImpl.getParallelStatus(sessionId);
+    if (!result.success) {
+      return { content: [{ type: 'text', text: `Error: ${result.error}` }], isError: true };
+    }
+    
+    if (sessionId && result.sessionInfo) {
+      const info = result.sessionInfo;
+      return {
+        content: [{
+          type: 'text',
+          text: `セッション: ${info.session_id}\n` +
+                `状態: ${info.status}\n` +
+                `完了率: ${info.completion_rate || 0}%\n` +
+                `ワーカー数: ${info.worker_count}\n` +
+                `複雑度: ${info.complexity}\n` +
+                `Boss必要: ${info.needs_boss ? 'はい' : 'いいえ'}\n` +
+                `タイムスタンプ: ${info.timestamp}`
+        }]
+      };
+    } else {
+      return {
+        content: [{
+          type: 'text',
+          text: result.sessions.length > 0 
+            ? `並列実装セッション一覧:\n\n${result.sessions.join('\n')}`
+            : "アクティブなセッションはありません"
+        }]
+      };
+    }
+  } catch (error) {
+    return { content: [{ type: 'text', text: `Error: ${error.message}` }], isError: true };
+  }
+});
+
 // Start the server
 async function main() {
   // Ensure all tools are registered before connecting
@@ -134,7 +208,7 @@ async function main() {
   await server.connect(transport);
   
   console.error('Agent Collaboration MCP Server v3.0 (Self-Contained Distribution) started');
-  console.error('Available tools: start_agent, get_agent_status, send_message, capture_screen');
+  console.error('Available tools: start_agent, get_agent_status, send_message, capture_screen, parallel_implement, get_parallel_status');
 }
 
 main().catch((error) => {

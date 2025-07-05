@@ -1,0 +1,159 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main ]
+  release:
+    types: [ created ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install tmux
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tmux
+    
+    - name: Setup test environment
+      run: |
+        # Create necessary directories
+        mkdir -p logs/message_delivery
+        
+        # Make scripts executable
+        chmod +x scripts/**/*.sh
+        chmod +x tests/**/*.sh
+    
+    - name: Run unit tests
+      run: |
+        echo "Running unit tests..."
+        ./tests/unit/test_auth_helper.sh
+    
+    - name: Run integration tests
+      run: |
+        echo "Running integration tests..."
+        # Integration tests require tmux
+        export TERM=xterm-256color
+        ./tests/integration/test_agent_startup.sh
+    
+    - name: Check script syntax
+      run: |
+        echo "Checking bash script syntax..."
+        find scripts -name "*.sh" -type f -exec bash -n {} \;
+        find tests -name "*.sh" -type f -exec bash -n {} \;
+    
+    - name: Lint JavaScript
+      run: |
+        # Install eslint if not present
+        if ! npm list eslint >/dev/null 2>&1; then
+          npm install --save-dev eslint
+        fi
+        
+        # Create basic eslint config if not exists
+        if [ ! -f .eslintrc.json ]; then
+          echo '{
+            "env": {
+              "node": true,
+              "es2021": true
+            },
+            "extends": "eslint:recommended",
+            "parserOptions": {
+              "ecmaVersion": 12,
+              "sourceType": "module"
+            }
+          }' > .eslintrc.json
+        fi
+        
+        # Run eslint
+        npx eslint index.js src/**/*.js --fix || true
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        registry-url: 'https://registry.npmjs.org'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Verify version
+      run: |
+        # Extract version from package.json
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        
+        echo "Package version: $PACKAGE_VERSION"
+        echo "Tag version: $TAG_VERSION"
+        
+        # Verify versions match
+        if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+          echo "Error: Package version ($PACKAGE_VERSION) does not match tag version ($TAG_VERSION)"
+          exit 1
+        fi
+    
+    - name: Build and test
+      run: |
+        # Run tests one more time before publishing
+        chmod +x scripts/**/*.sh
+        chmod +x tests/**/*.sh
+        npm test || true
+    
+    - name: Publish to npm
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run security audit
+      run: npm audit --audit-level=moderate || true
+    
+    - name: Check for secrets
+      run: |
+        # Basic secret detection
+        echo "Checking for potential secrets..."
+        
+        # Check for common secret patterns
+        if grep -r -E "(api[_-]?key|secret|password|token)" . \
+           --exclude-dir=node_modules \
+           --exclude-dir=.git \
+           --exclude="*.md" \
+           --exclude="ci.yml" | \
+           grep -v -E "(example|mock|test|dummy)"; then
+          echo "Warning: Potential secrets detected"
+        else
+          echo "No obvious secrets found"
+        fi
