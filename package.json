@@ -1,6 +1,6 @@
 {
   "name": "agent-collaboration-mcp",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Self-contained MCP server for multi-agent collaboration with automatic authentication delegation and complete tmux session management - no external dependencies required",
   "main": "index.js",
   "bin": {
