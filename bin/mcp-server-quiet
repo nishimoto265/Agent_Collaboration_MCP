@@ -1,0 +1,5 @@
+#!/bin/sh
+# Quiet wrapper for MCP server to suppress npm warnings
+export NPM_CONFIG_LOGLEVEL=error
+export NPM_CONFIG_UPDATE_NOTIFIER=false
+exec npx --yes agent-collaboration-mcp@latest "$@" 2>/dev/null

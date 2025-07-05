@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Ensure process doesn't exit immediately
+process.stdin.resume();
+
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
@@ -53,7 +56,7 @@ const parallelImpl = new ParallelImplementation(config.projectDir);
 // Create MCP server with proper configuration
 const server = new McpServer({
   name: 'agent-collaboration',
-  version: '2.0.0',
+  version: '3.3.2',
 });
 
 // 🚀 1. Start Agent - エージェント起動（必須）
