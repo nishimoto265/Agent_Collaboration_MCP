@@ -169,18 +169,16 @@ EOF
         tmux send-keys -t "$pane" "cd '$worktree_path'" C-m
         sleep 0.5
         
-        # プロンプトファイルを作成
-        local prompt_file="${worktree_path}/.parallel_prompt.txt"
-        cat > "$prompt_file" <<EOF
-【並列実装タスク - Worker $((i+1))】
+        # Worker用のプロンプトメッセージを準備
+        local worker_prompt="【並列実装タスク - Worker $((i+1))】
 
 $prompt
 
 注意事項:
 - 他のWorkerとは独立して実装してください
-- 完成したら「実装完了」と報告してください
 - このディレクトリ ($worktree_path) で作業してください
-EOF
+- 実装が完了したら、以下のコマンドでBossに報告してください：
+  tmux send-keys -t ${MULTIAGENT_SESSION}:0.0 \"Worker$((i+1)) 実装完了\" C-m"
         
         # エージェントを起動
         sleep 1
@@ -199,6 +197,9 @@ EOF
             
             # バックグラウンドでプロンプト送信を待機
             (
+                # pane_controller.shのパスを設定
+                local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
+                
                 # エージェント起動を待つ（最大60秒）
                 local wait_count=0
                 while [ $wait_count -lt 60 ]; do
@@ -209,7 +210,9 @@ EOF
                     local screen_content=$(tmux capture-pane -t "$pane" -p 2>/dev/null | tail -20)
                     if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
                         log_info "Worker $((i+1)) 起動完了確認 - タスクを送信中..."
-                        tmux send-keys -t "$pane" "cat '$prompt_file'" C-m
+                        # pane_controller.shを使ってメッセージを送信
+                        export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                        "$pane_controller" send "$pane_number" "$worker_prompt"
                         break
                     fi
                 done
@@ -228,23 +231,26 @@ EOF
         tmux send-keys -t "$boss_pane" "cd '$boss_worktree_path'" C-m
         sleep 0.5
         
-        # Boss用のプロンプトを準備
-        local boss_prompt_file="${boss_worktree_path}/.boss_prompt.txt"
-        cat > "$boss_prompt_file" <<EOF
-【並列実装タスク - Boss】
+        # Boss用のプロンプトメッセージを準備
+        local boss_prompt="【並列実装タスク - Boss】
 
 元のタスク:
 $prompt
 
 あなたはBossとして以下の役割を担います:
-1. 各Workerの実装を評価
-2. 最良の実装を選択、または良い点を組み合わせて統合
-3. 必要に応じてWorkerに改善指示
+1. 全てのWorkerから「Worker〇 実装完了」のメッセージを受信するまで待機
+2. 全Worker完了後、各実装を評価
+3. 最良の実装を選択、または良い点を組み合わせて統合
+4. 必要に応じてWorkerに改善指示
 
 Worker情報:
 $(for i in "${!worker_panes[@]}"; do
     echo "- Worker $((i+1)): ${worker_branches[$i]}"
 done)
+
+重要：
+- 全てのWorkerから「実装完了」の報告を受け取るまで評価を開始しないでください
+- Workerからの報告は画面に「Worker1 実装完了」「Worker2 実装完了」のような形式で表示されます
 
 評価基準:
 - コード品質
@@ -252,8 +258,7 @@ done)
 - パフォーマンス
 - 保守性
 
-完了時は音を鳴らして通知してください。
-EOF
+完了時は音を鳴らして通知してください。"
         
         # Bossのエージェントを起動
         sleep 1
@@ -269,6 +274,9 @@ EOF
             
             # バックグラウンドでプロンプト送信を待機
             (
+                # pane_controller.shのパスを設定
+                local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
+                
                 # エージェント起動を待つ（最大60秒）
                 local wait_count=0
                 while [ $wait_count -lt 60 ]; do
@@ -279,7 +287,9 @@ EOF
                     local screen_content=$(tmux capture-pane -t "$boss_pane" -p 2>/dev/null | tail -20)
                     if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
                         log_info "Boss 起動完了確認 - タスクを送信中..."
-                        tmux send-keys -t "$boss_pane" "cat '$boss_prompt_file'" C-m
+                        # pane_controller.shを使ってメッセージを送信
+                        export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                        "$pane_controller" send "$boss_pane_number" "$boss_prompt"
                         break
                     fi
                 done
