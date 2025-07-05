@@ -22,8 +22,10 @@ run_git_command() {
     local git_cmd="$@"
     
     if [ -n "$CALLER_PWD" ]; then
+        log_info "Gitコマンド実行: $git_cmd (ディレクトリ: $CALLER_PWD)"
         (cd "$CALLER_PWD" && eval "$git_cmd")
     else
+        log_info "Gitコマンド実行: $git_cmd (ディレクトリ: $(pwd))"
         eval "$git_cmd"
     fi
 }
@@ -47,12 +49,15 @@ create_worktree() {
     local worktree_path="${WORKTREE_BASE_DIR}/${branch_name}"
     
     log_info "Worktree作成中: $branch_name (ベース: $base_branch)"
+    log_info "WORKTREE_BASE_DIR: $WORKTREE_BASE_DIR"
+    log_info "CALLER_PWD: ${CALLER_PWD:-未設定}"
+    log_info "現在のディレクトリ: $(pwd)"
     
     # ベースディレクトリを作成
     mkdir -p "$WORKTREE_BASE_DIR"
     
     # 既存のworktreeをチェック
-    if run_git_command "run_git_command "git worktree list"" | grep -q "$worktree_path"; then
+    if run_git_command "git worktree list" | grep -q "$worktree_path"; then
         log_error "Worktree already exists: $branch_name"
         return 1
     fi

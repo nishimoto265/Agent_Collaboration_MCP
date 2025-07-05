@@ -24,7 +24,8 @@ source "$SCRIPT_DIR/../common/config.sh" 2>/dev/null || true
 source "$SCRIPT_DIR/../common/utils.sh" 2>/dev/null || true
 
 # 並列実装セッション情報を保存するディレクトリ
-PARALLEL_SESSION_DIR="${PROJECT_DIR}/logs/parallel_sessions"
+# 実行元のディレクトリに保存
+PARALLEL_SESSION_DIR="${CALLER_PWD:-$(pwd)}/logs/parallel_sessions"
 mkdir -p "$PARALLEL_SESSION_DIR"
 
 # 複雑度に基づいてワーカー数を決定
@@ -76,7 +77,10 @@ start_parallel_implementation() {
     # 新しい端末で専用tmuxセッションを作成
     if [ "$use_new_terminal" = "true" ]; then
         log_info "新しい端末で専用tmuxセッションを作成中..."
-        local tmux_session=$("$SCRIPT_DIR/terminal_launcher.sh" create-parallel "impl" "$worker_count")
+        # 実行元のディレクトリを渡す
+        local working_dir="${CALLER_PWD:-$(pwd)}"
+        log_info "作業ディレクトリ: $working_dir"
+        local tmux_session=$("$SCRIPT_DIR/terminal_launcher.sh" create-parallel "impl" "$worker_count" "$working_dir")
         
         if [ -z "$tmux_session" ]; then
             log_error "tmuxセッションの作成に失敗しました"
@@ -106,7 +110,7 @@ start_parallel_implementation() {
     # Worktree情報を解析
     local boss_branch="boss_${session_id}"
     # Bossは実行元のディレクトリで実行（NPX経由でも正しく動作）
-    local boss_path="$(pwd)"
+    local boss_path="${CALLER_PWD:-$(pwd)}"
     
     # Bossが必要かどうか判定
     local needs_boss=true
@@ -166,8 +170,9 @@ EOF
     for i in "${!worker_panes[@]}"; do
         local pane="${worker_panes[$i]}"
         local branch="${worker_branches[$i]}"
-        # Worktreeのパスはカレントディレクトリからの相対パス
-        local worktree_path="$(pwd)/worktrees/${branch}"
+        # Worktreeのパスは実行元ディレクトリからの相対パス
+        local base_dir="${CALLER_PWD:-$(pwd)}"
+        local worktree_path="${base_dir}/worktrees/${branch}"
         
         log_info "Worker $((i+1)) 起動中 (ペイン: $pane, ブランチ: $branch, エージェント: $agent_type)"
         
@@ -232,7 +237,9 @@ $prompt
         log_info "Boss準備中 (ペイン: $boss_pane)"
         
         # Bossは実行元ディレクトリで実行
-        tmux send-keys -t "$boss_pane" "cd '$(pwd)'" C-m
+        local boss_working_dir="${CALLER_PWD:-$(pwd)}"
+        log_info "Boss作業ディレクトリ: $boss_working_dir"
+        tmux send-keys -t "$boss_pane" "cd '$boss_working_dir'" C-m
         sleep 0.5
         
         # Boss用のプロンプトメッセージを準備
@@ -250,7 +257,7 @@ $prompt
 Worker情報:
 $(for i in "${!worker_panes[@]}"; do
     echo "- Worker $((i+1)): ${worker_branches[$i]}"
-    echo "  パス: $(pwd)/worktrees/${worker_branches[$i]}"
+    echo "  パス: ${boss_working_dir}/worktrees/${worker_branches[$i]}"
 done)
 
 重要：
@@ -277,7 +284,7 @@ done)
    git log --oneline -1
 
 注意: 
-- あなたは既に$(pwd)にいるので、直接gitコマンドを実行できます
+- あなたは既に${boss_working_dir}にいるので、直接gitコマンドを実行できます
 - 統合版を作成する場合は、masterブランチで直接作成してコミットしてください
 - マージしないとタスクは完了になりません
 

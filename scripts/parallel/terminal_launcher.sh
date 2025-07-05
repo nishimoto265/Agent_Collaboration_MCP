@@ -153,11 +153,14 @@ EOF
 create_parallel_session() {
     local base_name="$1"
     local worker_count="$2"
+    local working_dir="${3:-$(pwd)}"
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local session_name="parallel_${base_name}_${timestamp}"
     
+    log_info "並列セッション作成: $session_name (作業ディレクトリ: $working_dir)"
+    
     # 新しい端末でtmuxセッションを起動
-    if launch_terminal_with_tmux "$session_name" "$worker_count"; then
+    if launch_terminal_with_tmux "$session_name" "$worker_count" "$working_dir"; then
         echo "$session_name"
         return 0
     else
