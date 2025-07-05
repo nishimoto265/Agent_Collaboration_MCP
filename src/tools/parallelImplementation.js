@@ -38,7 +38,8 @@ class ParallelImplementation {
                 encoding: 'utf-8',
                 env: {
                     ...process.env,
-                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname)),
+                    CALLER_PWD: this.projectDir  // 呼び出し元のディレクトリを渡す
                 }
             });
             
@@ -99,7 +100,8 @@ class ParallelImplementation {
                 encoding: 'utf-8',
                 env: {
                     ...process.env,
-                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname)),
+                    CALLER_PWD: this.projectDir
                 }
             });
             
@@ -146,7 +148,8 @@ class ParallelImplementation {
                 encoding: 'utf-8',
                 env: {
                     ...process.env,
-                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname)),
+                    CALLER_PWD: this.projectDir
                 }
             });
             

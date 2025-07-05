@@ -17,6 +17,17 @@ log_success() {
 source "$(dirname "$0")/../common/config.sh" 2>/dev/null || true
 source "$(dirname "$0")/../common/utils.sh" 2>/dev/null || true
 
+# Gitコマンドを呼び出し元のディレクトリで実行するラッパー
+run_git_command() {
+    local git_cmd="$@"
+    
+    if [ -n "$CALLER_PWD" ]; then
+        (cd "$CALLER_PWD" && eval "$git_cmd")
+    else
+        eval "$git_cmd"
+    fi
+}
+
 # Worktreeのベースディレクトリ
 # 優先順位: 1) 環境変数 2) 呼び出し元のカレントディレクトリ 3) gitリポジトリのルート
 if [ -z "$WORKTREE_BASE_DIR" ]; then
@@ -24,7 +35,7 @@ if [ -z "$WORKTREE_BASE_DIR" ]; then
         WORKTREE_BASE_DIR="${CALLER_PWD}/worktrees"
     else
         # Gitリポジトリのルートディレクトリを取得
-        GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        GIT_ROOT=$(run_git_command "git rev-parse --show-toplevel 2>/dev/null" || pwd)
         WORKTREE_BASE_DIR="${GIT_ROOT}/worktrees"
     fi
 fi
@@ -41,21 +52,23 @@ create_worktree() {
     mkdir -p "$WORKTREE_BASE_DIR"
     
     # 既存のworktreeをチェック
-    if git worktree list | grep -q "$worktree_path"; then
+    if run_git_command "run_git_command "git worktree list"" | grep -q "$worktree_path"; then
         log_error "Worktree already exists: $branch_name"
         return 1
     fi
     
     # ブランチが存在するかチェック
-    if git branch --list "$branch_name" | grep -q "$branch_name"; then
+    if run_git_command "git branch --list '$branch_name'" | grep -q "$branch_name"; then
         # 既存ブランチを使用
-        git worktree add "$worktree_path" "$branch_name" >&2
+        run_git_command "git worktree add '$worktree_path' '$branch_name'" >&2
     else
         # 新しいブランチを作成
-        git worktree add -b "$branch_name" "$worktree_path" "$base_branch" >&2
+        run_git_command "git worktree add -b '$branch_name' '$worktree_path' '$base_branch'" >&2
     fi
     
-    if [ $? -eq 0 ]; then
+    local result=$?
+    
+    if [ $result -eq 0 ]; then
         log_success "Worktree作成完了: $worktree_path"
         echo "$worktree_path"
         return 0
@@ -70,9 +83,9 @@ list_worktrees() {
     local filter="${1:-}"
     
     if [ -z "$filter" ]; then
-        git worktree list
+        run_git_command "git worktree list"
     else
-        git worktree list | grep "$filter"
+        run_git_command "git worktree list" | grep "$filter"
     fi
 }
 
@@ -85,7 +98,7 @@ cleanup_worktree() {
     log_info "Worktreeクリーンアップ中: $branch_name"
     
     # Worktreeが存在するかチェック
-    if ! git worktree list | grep -q "$worktree_path"; then
+    if ! run_git_command "git worktree list" | grep -q "$worktree_path"; then
         log_error "Worktree not found: $branch_name"
         return 1
     fi
@@ -97,12 +110,12 @@ cleanup_worktree() {
     fi
     
     # Worktreeを削除
-    if git worktree remove $remove_flags "$worktree_path" >&2; then
+    if run_git_command "git worktree remove $remove_flags '$worktree_path'" >&2; then
         log_success "Worktree削除完了: $branch_name"
         
         # ブランチも削除するか確認
         if [ "$force" = "true" ]; then
-            git branch -D "$branch_name" >&2 || true
+            run_git_command "git branch -D '$branch_name'" >&2 || true
             log_info "ブランチも削除: $branch_name"
         fi
         
@@ -122,25 +135,25 @@ merge_worktree() {
     log_info "Worktreeマージ中: $source_branch -> $target_branch"
     
     # 現在のブランチを保存
-    local current_branch=$(git branch --show-current)
+    local current_branch=$(run_git_command "git branch --show-current")
     
     # ターゲットブランチに切り替え
-    git checkout "$target_branch" >&2
+    run_git_command "git checkout '$target_branch'" >&2
     
     if [ "$auto_merge" = "true" ]; then
         # 自動マージ
-        if git merge --no-ff "$source_branch" -m "Merge parallel implementation: $source_branch" >&2; then
+        if run_git_command "git merge --no-ff '$source_branch' -m 'Merge parallel implementation: $source_branch'" >&2; then
             log_success "自動マージ完了: $source_branch -> $target_branch"
         else
             log_error "自動マージ失敗 - コンフリクト解決が必要"
-            git merge --abort >&2
-            git checkout "$current_branch" >&2
+            run_git_command "git merge --abort" >&2
+            run_git_command "git checkout '$current_branch'" >&2
             return 1
         fi
     else
         # マージプレビュー
         echo "=== マージプレビュー ==="
-        git log --oneline "$target_branch".."$source_branch"
+        run_git_command "git log --oneline '$target_branch'..'$source_branch'"
         echo "======================="
         echo ""
         echo "マージを実行するには以下のコマンドを実行:"
@@ -149,7 +162,7 @@ merge_worktree() {
     fi
     
     # 元のブランチに戻る
-    git checkout "$current_branch" >&2
+    run_git_command "git checkout '$current_branch'" >&2
     
     return 0
 }
