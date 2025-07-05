@@ -104,8 +104,8 @@ start_parallel_implementation() {
     fi
     
     # Worktree情報を解析
-    local boss_branch=$(echo "$worktree_info" | grep -o '"boss_branch":"[^"]*"' | cut -d'"' -f4)
-    local boss_path=$(echo "$worktree_info" | grep -o '"boss_path":"[^"]*"' | cut -d'"' -f4)
+    local boss_branch="boss_${session_id}"
+    local boss_path="${PROJECT_DIR}"  # Bossは親ディレクトリで実行
     
     # Bossが必要かどうか判定
     local needs_boss=true
@@ -177,26 +177,25 @@ $prompt
 注意事項:
 - 他のWorkerとは独立して実装してください
 - このディレクトリ ($worktree_path) で作業してください
-- 実装が完了したら、以下のコマンドでBossに報告してください：
-  tmux send-keys -t ${MULTIAGENT_SESSION}:0.0 \"Worker$((i+1)) 実装完了\" C-m"
+- 実装が完了したら、Bashツールで以下のコマンドを実行してBossに報告してください：
+  TMUX_SESSION=${MULTIAGENT_SESSION} ${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh send 0 \"Worker$((i+1)) 実装完了\""
         
-        # エージェントを起動
-        sleep 1
-        # agent_manager.shのパスを正しく設定
-        local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
-        if [ -f "$agent_manager" ]; then
-            # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
-            local pane_number="${pane##*.}"
-            log_info "$agent_type を起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $pane_number)"
-            # 並列実装セッションで実行
-            (
-                export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                export CLAUDE_NO_BROWSER=1
-                "$agent_manager" start "$pane_number" "$agent_type"
-            )
-            
-            # バックグラウンドでプロンプト送信を待機
-            (
+        # バックグラウンドでエージェント起動とプロンプト送信
+        (
+            sleep 1
+            # agent_manager.shのパスを正しく設定
+            local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
+            if [ -f "$agent_manager" ]; then
+                # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
+                local pane_number="${pane##*.}"
+                log_info "$agent_type を起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $pane_number)"
+                # 並列実装セッションで実行
+                (
+                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                    export CLAUDE_NO_BROWSER=1
+                    "$agent_manager" start "$pane_number" "$agent_type"
+                )
+                
                 # pane_controller.shのパスを設定
                 local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
                 
@@ -216,19 +215,18 @@ $prompt
                         break
                     fi
                 done
-            ) &
-        else
-            log_error "agent_manager.shが見つかりません: $agent_manager"
-        fi
+            else
+                log_error "agent_manager.shが見つかりません: $agent_manager"
+            fi
+        ) &
     done
     
     # Bossが必要な場合は準備と起動
     if [ "$needs_boss" = "true" ]; then
-        log_info "Boss準備中 (ペイン: $boss_pane, ブランチ: $boss_branch)"
+        log_info "Boss準備中 (ペイン: $boss_pane)"
         
-        # Bossディレクトリに移動
-        local boss_worktree_path="${PROJECT_DIR}/worktrees/${boss_branch}"
-        tmux send-keys -t "$boss_pane" "cd '$boss_worktree_path'" C-m
+        # Bossは親ディレクトリで実行
+        tmux send-keys -t "$boss_pane" "cd '$PROJECT_DIR'" C-m
         sleep 0.5
         
         # Boss用のプロンプトメッセージを準備
@@ -246,6 +244,7 @@ $prompt
 Worker情報:
 $(for i in "${!worker_panes[@]}"; do
     echo "- Worker $((i+1)): ${worker_branches[$i]}"
+    echo "  パス: ${PROJECT_DIR}/worktrees/${worker_branches[$i]}"
 done)
 
 重要：
@@ -258,22 +257,50 @@ done)
 - パフォーマンス
 - 保守性
 
-完了時は音を鳴らして通知してください。"
+"
+        # autoMerge設定に応じて統合方法を追加
+        if [ "$skip_review" = "true" ]; then
+            boss_prompt+="統合方法（自動統合モード）:
+【重要】評価完了後、必ず以下の手順でmasterブランチにマージしてください：
+
+1. 各Workerの実装を評価（worktreeパスを使用して直接ファイルを読む）
+2. 最良のWorkerブランチを選択
+3. 以下のコマンドでマージ（Bashツールを使用）:
+   git checkout master
+   git merge --no-ff <選択したWorkerブランチ> -m \"自動統合: <選択理由>\"
+   git log --oneline -1
+
+注意: 
+- あなたは既に${PROJECT_DIR}にいるので、直接gitコマンドを実行できます
+- 統合版を作成する場合は、masterブランチで直接作成してコミットしてください
+- マージしないとタスクは完了になりません
+
+"
+        else
+            boss_prompt+="統合方法（手動統合モード）:
+- 評価結果を提示し、どのWorkerの実装が最良かを報告してください
+- マージは以下のコマンドで手動実行可能であることを案内:
+  git checkout master
+  git merge --no-ff <選択したWorkerブランチ>
+
+"
+        fi
         
-        # Bossのエージェントを起動
-        sleep 1
-        local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
-        if [ -f "$agent_manager" ]; then
-            local boss_pane_number="${boss_pane##*.}"
-            log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
-            (
-                export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                export CLAUDE_NO_BROWSER=1
-                "$agent_manager" start "$boss_pane_number" "$agent_type"
-            )
-            
-            # バックグラウンドでプロンプト送信を待機
-            (
+        boss_prompt+="完了時は音を鳴らして通知してください。"
+        
+        # バックグラウンドでBossのエージェント起動とプロンプト送信
+        (
+            sleep 1
+            local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
+            if [ -f "$agent_manager" ]; then
+                local boss_pane_number="${boss_pane##*.}"
+                log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
+                (
+                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                    export CLAUDE_NO_BROWSER=1
+                    "$agent_manager" start "$boss_pane_number" "$agent_type"
+                )
+                
                 # pane_controller.shのパスを設定
                 local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
                 
@@ -293,10 +320,10 @@ done)
                         break
                     fi
                 done
-            ) &
-        else
-            log_error "agent_manager.shが見つかりません: $agent_manager"
-        fi
+            else
+                log_error "agent_manager.shが見つかりません: $agent_manager"
+            fi
+        ) &
     fi
     
     # ステータスを更新
