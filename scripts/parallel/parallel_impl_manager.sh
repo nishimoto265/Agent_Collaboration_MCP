@@ -193,8 +193,27 @@ EOF
             # 並列実装セッションで実行
             (
                 export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                export CLAUDE_NO_BROWSER=1
                 "$agent_manager" start "$pane_number" "$agent_type"
             )
+            
+            # バックグラウンドでプロンプト送信を待機
+            (
+                # エージェント起動を待つ（最大60秒）
+                local wait_count=0
+                while [ $wait_count -lt 60 ]; do
+                    sleep 1
+                    wait_count=$((wait_count + 1))
+                    
+                    # Claudeプロンプトが表示されているか確認
+                    local screen_content=$(tmux capture-pane -t "$pane" -p 2>/dev/null | tail -20)
+                    if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
+                        log_info "Worker $((i+1)) 起動完了確認 - タスクを送信中..."
+                        tmux send-keys -t "$pane" "cat '$prompt_file'" C-m
+                        break
+                    fi
+                done
+            ) &
         else
             log_error "agent_manager.shが見つかりません: $agent_manager"
         fi
@@ -244,8 +263,27 @@ EOF
             log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
             (
                 export TMUX_SESSION="${MULTIAGENT_SESSION}"
+                export CLAUDE_NO_BROWSER=1
                 "$agent_manager" start "$boss_pane_number" "$agent_type"
             )
+            
+            # バックグラウンドでプロンプト送信を待機
+            (
+                # エージェント起動を待つ（最大60秒）
+                local wait_count=0
+                while [ $wait_count -lt 60 ]; do
+                    sleep 1
+                    wait_count=$((wait_count + 1))
+                    
+                    # Claudeプロンプトが表示されているか確認
+                    local screen_content=$(tmux capture-pane -t "$boss_pane" -p 2>/dev/null | tail -20)
+                    if echo "$screen_content" | grep -q "Bypassing Permissions" || echo "$screen_content" | grep -q "█"; then
+                        log_info "Boss 起動完了確認 - タスクを送信中..."
+                        tmux send-keys -t "$boss_pane" "cat '$boss_prompt_file'" C-m
+                        break
+                    fi
+                done
+            ) &
         else
             log_error "agent_manager.shが見つかりません: $agent_manager"
         fi
