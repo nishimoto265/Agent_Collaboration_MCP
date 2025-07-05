@@ -105,7 +105,8 @@ start_parallel_implementation() {
     
     # Worktree情報を解析
     local boss_branch="boss_${session_id}"
-    local boss_path="${PROJECT_DIR}"  # Bossは親ディレクトリで実行
+    # Bossは実行元のディレクトリで実行（NPX経由でも正しく動作）
+    local boss_path="$(pwd)"
     
     # Bossが必要かどうか判定
     local needs_boss=true
@@ -165,7 +166,8 @@ EOF
     for i in "${!worker_panes[@]}"; do
         local pane="${worker_panes[$i]}"
         local branch="${worker_branches[$i]}"
-        local worktree_path="${PROJECT_DIR}/worktrees/${branch}"
+        # Worktreeのパスはカレントディレクトリからの相対パス
+        local worktree_path="$(pwd)/worktrees/${branch}"
         
         log_info "Worker $((i+1)) 起動中 (ペイン: $pane, ブランチ: $branch, エージェント: $agent_type)"
         
@@ -182,13 +184,13 @@ $prompt
 - 他のWorkerとは独立して実装してください
 - このディレクトリ ($worktree_path) で作業してください
 - 実装が完了したら、Bashツールで以下のコマンドを実行してBossに報告してください：
-  TMUX_SESSION=${MULTIAGENT_SESSION} ${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh send 0 \"Worker$((i+1)) 実装完了\""
+  TMUX_SESSION=${MULTIAGENT_SESSION} ${SCRIPT_DIR}/../agent_tools/pane_controller.sh send 0 \"Worker$((i+1)) 実装完了\""
         
         # バックグラウンドでエージェント起動とプロンプト送信
         (
             sleep 1
             # agent_manager.shのパスを正しく設定
-            local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
+            local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
             if [ -f "$agent_manager" ]; then
                 # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
                 local pane_number="${pane##*.}"
@@ -201,7 +203,7 @@ $prompt
                 )
                 
                 # pane_controller.shのパスを設定
-                local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
+                local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
                 
                 # エージェント起動を待つ（最大60秒）
                 local wait_count=0
@@ -229,8 +231,8 @@ $prompt
     if [ "$needs_boss" = "true" ]; then
         log_info "Boss準備中 (ペイン: $boss_pane)"
         
-        # Bossは親ディレクトリで実行
-        tmux send-keys -t "$boss_pane" "cd '$PROJECT_DIR'" C-m
+        # Bossは実行元ディレクトリで実行
+        tmux send-keys -t "$boss_pane" "cd '$(pwd)'" C-m
         sleep 0.5
         
         # Boss用のプロンプトメッセージを準備
@@ -248,7 +250,7 @@ $prompt
 Worker情報:
 $(for i in "${!worker_panes[@]}"; do
     echo "- Worker $((i+1)): ${worker_branches[$i]}"
-    echo "  パス: ${PROJECT_DIR}/worktrees/${worker_branches[$i]}"
+    echo "  パス: $(pwd)/worktrees/${worker_branches[$i]}"
 done)
 
 重要：
@@ -275,7 +277,7 @@ done)
    git log --oneline -1
 
 注意: 
-- あなたは既に${PROJECT_DIR}にいるので、直接gitコマンドを実行できます
+- あなたは既に$(pwd)にいるので、直接gitコマンドを実行できます
 - 統合版を作成する場合は、masterブランチで直接作成してコミットしてください
 - マージしないとタスクは完了になりません
 
@@ -295,7 +297,7 @@ done)
         # バックグラウンドでBossのエージェント起動とプロンプト送信
         (
             sleep 1
-            local agent_manager="${PROJECT_DIR}/scripts/agent_tools/agent_manager.sh"
+            local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
             if [ -f "$agent_manager" ]; then
                 local boss_pane_number="${boss_pane##*.}"
                 log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
@@ -306,7 +308,7 @@ done)
                 )
                 
                 # pane_controller.shのパスを設定
-                local pane_controller="${PROJECT_DIR}/scripts/agent_tools/pane_controller.sh"
+                local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
                 
                 # エージェント起動を待つ（最大60秒）
                 local wait_count=0
