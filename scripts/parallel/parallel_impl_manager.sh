@@ -70,9 +70,10 @@ start_parallel_implementation() {
     # ワーカー数を決定
     worker_count=$(determine_worker_count "$complexity" "$worker_count")
     
-    # タイムスタンプとセッションID
+    # タイムスタンプとセッションID（ミリ秒とランダム値を含む）
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local session_id="parallel_${timestamp}"
+    local random_suffix=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 4 | head -n 1)
+    local session_id="parallel_${timestamp}_${random_suffix}"
     
     # 新しい端末で専用tmuxセッションを作成
     if [ "$use_new_terminal" = "true" ]; then

@@ -155,7 +155,8 @@ create_parallel_session() {
     local worker_count="$2"
     local working_dir="${3:-$(pwd)}"
     local timestamp=$(date +%Y%m%d_%H%M%S)
-    local session_name="parallel_${base_name}_${timestamp}"
+    local random_suffix=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 4 | head -n 1)
+    local session_name="parallel_${base_name}_${timestamp}_${random_suffix}"
     
     log_info "並列セッション作成: $session_name (作業ディレクトリ: $working_dir)"
     

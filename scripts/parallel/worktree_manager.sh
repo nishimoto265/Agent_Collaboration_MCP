@@ -69,6 +69,16 @@ create_worktree() {
         return 1
     fi
     
+    # 既存のブランチ（リモート含む）をチェック
+    if run_git_command "git branch -a" | grep -q "$branch_name"; then
+        log_warn "ブランチが既に存在します: $branch_name"
+        # 既存ブランチを削除するか、別の名前を使用
+        local new_branch_name="${branch_name}_$(date +%s)"
+        log_info "新しいブランチ名を使用: $new_branch_name"
+        branch_name="$new_branch_name"
+        worktree_path="${WORKTREE_BASE_DIR}/${branch_name}"
+    fi
+    
     # ベースブランチが存在するか確認
     if ! run_git_command "git rev-parse --verify '$base_branch'" >/dev/null 2>&1; then
         log_error "ベースブランチが存在しません: $base_branch"
