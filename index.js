@@ -14,14 +14,17 @@ const path = require('path');
 
 // Load configuration from environment variables and config file
 function loadConfig() {
+  // MCPサーバのルートディレクトリを検出
+  const mcpRoot = __dirname;
+  
   const defaultConfig = {
     projectDir: process.cwd(),
     sessionName: 'multiagent',
-    scriptDir: 'scripts/agent_tools'
+    scriptDir: path.join(mcpRoot, 'scripts/agent_tools')
   };
 
   // Try to load config.json if it exists
-  const configPath = path.join(__dirname, 'config.json');
+  const configPath = path.join(mcpRoot, 'config.json');
   let fileConfig = {};
   if (fs.existsSync(configPath)) {
     try {
@@ -47,6 +50,7 @@ function loadConfig() {
 }
 
 const config = loadConfig();
+console.error('[DEBUG] MCP Config:', JSON.stringify(config, null, 2));
 
 // Initialize tool instances with configuration
 const agentManager = new AgentManager(config);
