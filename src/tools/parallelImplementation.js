@@ -5,8 +5,11 @@ const fs = require('fs');
 class ParallelImplementation {
     constructor(projectDir) {
         this.projectDir = projectDir;
-        this.parallelScriptPath = path.join(projectDir, 'scripts', 'parallel', 'parallel_impl_manager.sh');
-        this.worktreeScriptPath = path.join(projectDir, 'scripts', 'parallel', 'worktree_manager.sh');
+        
+        // MCPサーバーのルートディレクトリを取得
+        const mcpRoot = path.dirname(path.dirname(__dirname));
+        this.parallelScriptPath = path.join(mcpRoot, 'scripts', 'parallel', 'parallel_impl_manager.sh');
+        this.worktreeScriptPath = path.join(mcpRoot, 'scripts', 'parallel', 'worktree_manager.sh');
         
         // スクリプトの存在確認
         if (!fs.existsSync(this.parallelScriptPath)) {
