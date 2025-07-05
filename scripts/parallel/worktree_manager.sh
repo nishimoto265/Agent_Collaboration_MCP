@@ -53,6 +53,13 @@ create_worktree() {
     log_info "CALLER_PWD: ${CALLER_PWD:-未設定}"
     log_info "現在のディレクトリ: $(pwd)"
     
+    # Gitリポジトリかどうか確認
+    if ! run_git_command "git rev-parse --git-dir" >/dev/null 2>&1; then
+        log_error "Gitリポジトリではありません: ${CALLER_PWD:-$(pwd)}"
+        log_error "並列実装機能を使用するには、Gitリポジトリ内で実行してください"
+        return 1
+    fi
+    
     # ベースディレクトリを作成
     mkdir -p "$WORKTREE_BASE_DIR"
     
@@ -60,6 +67,22 @@ create_worktree() {
     if run_git_command "git worktree list" | grep -q "$worktree_path"; then
         log_error "Worktree already exists: $branch_name"
         return 1
+    fi
+    
+    # ベースブランチが存在するか確認
+    if ! run_git_command "git rev-parse --verify '$base_branch'" >/dev/null 2>&1; then
+        log_error "ベースブランチが存在しません: $base_branch"
+        # masterまたはmainを試す
+        if run_git_command "git rev-parse --verify 'master'" >/dev/null 2>&1; then
+            base_branch="master"
+            log_info "masterブランチを使用します"
+        elif run_git_command "git rev-parse --verify 'main'" >/dev/null 2>&1; then
+            base_branch="main"
+            log_info "mainブランチを使用します"
+        else
+            log_error "有効なベースブランチが見つかりません"
+            return 1
+        fi
     fi
     
     # ブランチが存在するかチェック
@@ -202,7 +225,7 @@ create_parallel_worktrees() {
     
     # 結果を出力
     echo "{\"session_id\":\"$session_id\","
-    echo " \"worker_branches\":[$(printf '"%s",' "${worker_branches[@]}" | sed 's/,$//')]},"
+    echo " \"worker_branches\":[$(printf '"%s",' "${worker_branches[@]}" | sed 's/,$//')],"
     echo " \"timestamp\":\"$timestamp\"}"
 }
 

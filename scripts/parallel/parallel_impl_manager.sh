@@ -100,10 +100,20 @@ start_parallel_implementation() {
     
     # Worktreeを作成
     log_info "Worktree作成中..."
-    local worktree_info=$(CALLER_PWD="$(pwd)" "$SCRIPT_DIR/worktree_manager.sh" create-parallel "$session_id" "$worker_count")
+    # CALLER_PWDが設定されていない場合のみpwdを使用
+    if [ -z "$CALLER_PWD" ]; then
+        export CALLER_PWD="$(pwd)"
+    fi
+    local worktree_info=$("$SCRIPT_DIR/worktree_manager.sh" create-parallel "$session_id" "$worker_count")
     
-    if [ $? -ne 0 ]; then
+    if [ $? -ne 0 ] || [ -z "$worktree_info" ]; then
         log_error "Worktree作成失敗"
+        return 1
+    fi
+    
+    # worktree_infoが有効なJSONか確認
+    if ! echo "$worktree_info" | jq . >/dev/null 2>&1; then
+        log_error "Worktree情報が不正なJSON形式です: $worktree_info"
         return 1
     fi
     
@@ -144,6 +154,12 @@ start_parallel_implementation() {
         worker_panes_json=$(printf '"%s",' "${worker_panes[@]}" | sed 's/,$//')
     fi
     
+    # worktree_infoを安全にJSON化
+    local worktree_info_json="{}"
+    if [ -n "$worktree_info" ]; then
+        worktree_info_json=$(echo "$worktree_info" | jq -c . 2>/dev/null || echo "{}")
+    fi
+    
     cat > "$session_file" <<EOF
 {
     "session_id": "$session_id",
@@ -155,7 +171,7 @@ start_parallel_implementation() {
     "needs_boss": $needs_boss,
     "boss_pane": "$boss_pane",
     "worker_panes": [$worker_panes_json],
-    "worktree_info": $(echo "$worktree_info" | jq -c .),
+    "worktree_info": $worktree_info_json,
     "tmux_session": "${MULTIAGENT_SESSION}",
     "use_new_terminal": $use_new_terminal,
     "agent_type": "$agent_type",
@@ -165,7 +181,25 @@ EOF
     
     # Workerを起動
     log_info "Worker起動中..."
-    local worker_branches=($(echo "$worktree_info" | grep -o '"worker_branches":\[[^]]*\]' | sed 's/.*\[\(.*\)\].*/\1/' | tr ',' ' ' | tr -d '"'))
+    local worker_branches=()
+    if [ -n "$worktree_info" ]; then
+        # jqを使って安全に配列を抽出
+        local branches_json=$(echo "$worktree_info" | jq -r '.worker_branches[]' 2>/dev/null)
+        if [ -n "$branches_json" ]; then
+            while IFS= read -r branch; do
+                worker_branches+=("$branch")
+            done <<< "$branches_json"
+        fi
+    fi
+    
+    # worker_branchesが空の場合のフォールバック
+    if [ ${#worker_branches[@]} -eq 0 ]; then
+        log_error "Worker branches not found in worktree info"
+        # デフォルトのブランチ名を生成
+        for i in $(seq 1 $worker_count); do
+            worker_branches+=("worker${i}_${session_id}")
+        done
+    fi
     
     for i in "${!worker_panes[@]}"; do
         local pane="${worker_panes[$i]}"
