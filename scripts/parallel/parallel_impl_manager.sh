@@ -373,11 +373,6 @@ monitor_worker_completion() {
     echo "$completion_rate"
 }
 
-# 後方互換性のために残している関数（実際は使用されない）
-trigger_boss_evaluation() {
-    log_info "この関数は非推奨です。Bossはstart_parallel_implementation内で自動起動されます。"
-    return 0
-}
 
 # 並列実装ステータスを取得
 get_parallel_status() {
@@ -418,9 +413,6 @@ main() {
         "monitor")
             monitor_worker_completion "$@"
             ;;
-        "trigger-boss")
-            trigger_boss_evaluation "$@"
-            ;;
         "status")
             get_parallel_status "$@"
             ;;
@@ -430,7 +422,6 @@ main() {
             echo "コマンド:"
             echo "  start <prompt> [worker_count] [complexity] [auto_merge]"
             echo "  monitor <session_id>"
-            echo "  trigger-boss <session_id>"
             echo "  status [session_id]"
             exit 1
             ;;
