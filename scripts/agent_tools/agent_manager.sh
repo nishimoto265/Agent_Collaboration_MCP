@@ -7,12 +7,37 @@ set -e
 
 # 共通ライブラリの読み込み
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../common/utils.sh"
-setup_directories "$SCRIPT_DIR"
+
+# MCPルートディレクトリの検出
+if [ -f "$SCRIPT_DIR/../common/utils.sh" ]; then
+    source "$SCRIPT_DIR/../common/utils.sh"
+else
+    # NPX経由で実行された場合のパス解決
+    MCP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    if [ -f "$MCP_ROOT/scripts/common/utils.sh" ]; then
+        source "$MCP_ROOT/scripts/common/utils.sh"
+    else
+        echo "[ERROR] utils.shが見つかりません" >&2
+        exit 1
+    fi
+fi
+
+# setup_directories関数が存在する場合のみ実行
+if declare -f setup_directories > /dev/null 2>&1; then
+    setup_directories "$SCRIPT_DIR"
+fi
 
 # スクリプトパスの設定
+# 同じディレクトリにあるはず
 PANE_CONTROLLER="$SCRIPT_DIR/pane_controller.sh"
 AUTH_HELPER="$SCRIPT_DIR/auth_helper.sh"
+
+# ファイルが存在しない場合はMCPルートから探す
+if [ ! -f "$PANE_CONTROLLER" ]; then
+    MCP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    PANE_CONTROLLER="$MCP_ROOT/scripts/agent_tools/pane_controller.sh"
+    AUTH_HELPER="$MCP_ROOT/scripts/agent_tools/auth_helper.sh"
+fi
 
 # エージェント設定ファイル
 AGENT_AUTH_CONFIG="$PROJECT_DIR/.agent_auth_config.json"
@@ -453,14 +478,24 @@ EOF
 # メイン処理
 main() {
     # 依存ツール確認
-    if [ ! -x "$PANE_CONTROLLER" ]; then
-        log_error "pane_controller.sh が見つかりません"
+    if [ ! -f "$PANE_CONTROLLER" ]; then
+        log_error "pane_controller.sh が見つかりません: $PANE_CONTROLLER"
         exit 1
     fi
     
-    if [ ! -x "$AUTH_HELPER" ]; then
-        log_error "auth_helper.sh が見つかりません"
+    # 実行権限がない場合は付与
+    if [ ! -x "$PANE_CONTROLLER" ]; then
+        chmod +x "$PANE_CONTROLLER"
+    fi
+    
+    if [ ! -f "$AUTH_HELPER" ]; then
+        log_error "auth_helper.sh が見つかりません: $AUTH_HELPER"
         exit 1
+    fi
+    
+    # 実行権限がない場合は付与
+    if [ ! -x "$AUTH_HELPER" ]; then
+        chmod +x "$AUTH_HELPER"
     fi
     
     case "${1:-}" in
