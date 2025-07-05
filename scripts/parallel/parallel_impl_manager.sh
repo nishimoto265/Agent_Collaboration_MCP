@@ -96,7 +96,7 @@ start_parallel_implementation() {
     
     # Worktreeを作成
     log_info "Worktree作成中..."
-    local worktree_info=$("$SCRIPT_DIR/worktree_manager.sh" create-parallel "$session_id" "$worker_count")
+    local worktree_info=$(CALLER_PWD="$(pwd)" "$SCRIPT_DIR/worktree_manager.sh" create-parallel "$session_id" "$worker_count")
     
     if [ $? -ne 0 ]; then
         log_error "Worktree作成失敗"

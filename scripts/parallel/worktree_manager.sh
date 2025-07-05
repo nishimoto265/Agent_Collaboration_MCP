@@ -18,8 +18,16 @@ source "$(dirname "$0")/../common/config.sh" 2>/dev/null || true
 source "$(dirname "$0")/../common/utils.sh" 2>/dev/null || true
 
 # Worktreeのベースディレクトリ
-# 環境変数で指定可能、デフォルトは現在のディレクトリ
-WORKTREE_BASE_DIR="${WORKTREE_BASE_DIR:-$(pwd)/worktrees}"
+# 優先順位: 1) 環境変数 2) 呼び出し元のカレントディレクトリ 3) gitリポジトリのルート
+if [ -z "$WORKTREE_BASE_DIR" ]; then
+    if [ -n "$CALLER_PWD" ]; then
+        WORKTREE_BASE_DIR="${CALLER_PWD}/worktrees"
+    else
+        # Gitリポジトリのルートディレクトリを取得
+        GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        WORKTREE_BASE_DIR="${GIT_ROOT}/worktrees"
+    fi
+fi
 
 # Worktreeを作成
 create_worktree() {

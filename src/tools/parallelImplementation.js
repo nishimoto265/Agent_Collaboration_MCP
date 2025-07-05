@@ -38,8 +38,7 @@ class ParallelImplementation {
                 encoding: 'utf-8',
                 env: {
                     ...process.env,
-                    PROJECT_DIR: path.dirname(path.dirname(__dirname)),
-                    WORKTREE_BASE_DIR: path.join(this.projectDir, 'worktrees')
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
                 }
             });
             
