@@ -18,7 +18,8 @@ source "$(dirname "$0")/../common/config.sh" 2>/dev/null || true
 source "$(dirname "$0")/../common/utils.sh" 2>/dev/null || true
 
 # Worktreeのベースディレクトリ
-WORKTREE_BASE_DIR="${PROJECT_DIR}/worktrees"
+# 環境変数で指定可能、デフォルトは現在のディレクトリ
+WORKTREE_BASE_DIR="${WORKTREE_BASE_DIR:-$(pwd)/worktrees}"
 
 # Worktreeを作成
 create_worktree() {
