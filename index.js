@@ -50,7 +50,7 @@ function loadConfig() {
 }
 
 const config = loadConfig();
-console.error('[DEBUG] MCP Config:', JSON.stringify(config, null, 2));
+// console.error('[DEBUG] MCP Config:', JSON.stringify(config, null, 2));
 
 // Initialize tool instances with configuration
 const agentManager = new AgentManager(config);

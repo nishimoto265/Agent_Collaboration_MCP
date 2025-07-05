@@ -3,6 +3,12 @@
 # 🔧 共通設定ファイル
 # 全スクリプトで使用される設定値を一元管理
 
+# プロジェクトディレクトリの自動検出
+if [ -z "$PROJECT_DIR" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
+
 # セッション設定
 export TMUX_SESSION="${TMUX_SESSION:-multiagent}"
 export TMUX_WINDOW="${TMUX_WINDOW:-0}"
