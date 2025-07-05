@@ -32,17 +32,31 @@ class ParallelImplementation {
             // コマンドを構築
             const command = `'${this.parallelScriptPath}' start '${escapedPrompt}' ${workerCount} ${complexity} ${autoMerge} ${useNewTerminal} ${agentType}`;
             
-            // 実行
+            // 実行（プロジェクトディレクトリから実行）
             const result = execSync(command, {
-                cwd: path.dirname(this.parallelScriptPath),
-                encoding: 'utf-8'
+                cwd: this.projectDir,
+                encoding: 'utf-8',
+                env: {
+                    ...process.env,
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                }
             });
             
             // セッションIDを抽出
-            const sessionId = result.trim().split('\n').pop();
+            const lines = result.trim().split('\n');
+            let sessionId = null;
             
-            if (!sessionId || !sessionId.startsWith('parallel_')) {
-                throw new Error('Failed to get session ID');
+            // 最後の行からparallel_で始まる行を探す
+            for (let i = lines.length - 1; i >= 0; i--) {
+                if (lines[i].startsWith('parallel_')) {
+                    sessionId = lines[i];
+                    break;
+                }
+            }
+            
+            if (!sessionId) {
+                console.error('[ParallelImpl] Script output:', result);
+                throw new Error('Failed to get session ID from script output');
             }
             
             console.log(`[ParallelImpl] Session started: ${sessionId}`);
@@ -81,8 +95,12 @@ class ParallelImplementation {
                 : `'${this.parallelScriptPath}' status`;
             
             const result = execSync(command, {
-                cwd: path.dirname(this.parallelScriptPath),
-                encoding: 'utf-8'
+                cwd: this.projectDir,
+                encoding: 'utf-8',
+                env: {
+                    ...process.env,
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                }
             });
             
             if (sessionId && result.includes('{')) {
@@ -124,8 +142,12 @@ class ParallelImplementation {
             const command = `'${this.parallelScriptPath}' monitor '${sessionId}'`;
             
             const result = execSync(command, {
-                cwd: path.dirname(this.parallelScriptPath),
-                encoding: 'utf-8'
+                cwd: this.projectDir,
+                encoding: 'utf-8',
+                env: {
+                    ...process.env,
+                    PROJECT_DIR: path.dirname(path.dirname(__dirname))
+                }
             });
             
             const completionRate = parseInt(result.trim());
