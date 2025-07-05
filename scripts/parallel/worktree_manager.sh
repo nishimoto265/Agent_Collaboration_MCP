@@ -154,9 +154,7 @@ create_parallel_worktrees() {
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local session_id="${base_name}_${timestamp}"
     
-    # Boss用のworktreeは作成しない（親ディレクトリで実行）
-    local boss_branch="boss_${session_id}"
-    local boss_path="${PROJECT_DIR}"
+    # Bossは親ディレクトリで実行するため、worktreeは作成しない
     
     # Worker用のworktree
     local worker_branches=()
@@ -165,8 +163,7 @@ create_parallel_worktrees() {
         local worker_path=$(create_worktree "$worker_branch" "$base_branch")
         
         if [ -z "$worker_path" ]; then
-            # エラー時はクリーンアップ
-            # Bossのworktreeは作成していないのでスキップ
+            # エラー時は作成済みのWorker worktreeをクリーンアップ
             for wb in "${worker_branches[@]}"; do
                 cleanup_worktree "$wb" true
             done
@@ -178,8 +175,6 @@ create_parallel_worktrees() {
     
     # 結果を出力
     echo "{\"session_id\":\"$session_id\","
-    echo " \"boss_branch\":\"$boss_branch\","
-    echo " \"boss_path\":\"$boss_path\","
     echo " \"worker_branches\":[$(printf '"%s",' "${worker_branches[@]}" | sed 's/,$//')]},"
     echo " \"timestamp\":\"$timestamp\"}"
 }

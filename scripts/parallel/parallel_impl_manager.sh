@@ -143,8 +143,6 @@ start_parallel_implementation() {
     "skip_review": $skip_review,
     "needs_boss": $needs_boss,
     "boss_pane": "$boss_pane",
-    "boss_branch": "$boss_branch",
-    "boss_path": "$boss_path",
     "worker_panes": [$(printf '"%s",' "${worker_panes[@]}" | sed 's/,$//')],
     "worktree_info": $(echo "$worktree_info" | jq -c .),
     "tmux_session": "${MULTIAGENT_SESSION}",
@@ -375,27 +373,9 @@ monitor_worker_completion() {
     echo "$completion_rate"
 }
 
-# Bossを起動して評価開始
-# 注意: この関数は後方互換性のために残していますが、
-# 現在はstart_parallel_implementation内でBossも自動起動されるため不要です
+# 後方互換性のために残している関数（実際は使用されない）
 trigger_boss_evaluation() {
-    local session_id="$1"
-    local session_file="${PARALLEL_SESSION_DIR}/${session_id}.json"
-    
-    if [ ! -f "$session_file" ]; then
-        log_error "セッションファイルが見つかりません: $session_id"
-        return 1
-    fi
-    
-    # セッション情報を読み込み
-    local needs_boss=$(jq -r '.needs_boss' "$session_file")
-    
-    if [ "$needs_boss" != "true" ]; then
-        log_info "Bossは不要です（シンプルタスク）"
-        return 0
-    fi
-    
-    log_info "Bossは既に起動済みです"
+    log_info "この関数は非推奨です。Bossはstart_parallel_implementation内で自動起動されます。"
     return 0
 }
 
