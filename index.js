@@ -201,14 +201,8 @@ server.registerTool('get_parallel_status', {
 
 // Start the server
 async function main() {
-  // Ensure all tools are registered before connecting
-  console.error('Registering MCP tools...');
-  
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  
-  console.error('Agent Collaboration MCP Server v3.0 (Self-Contained Distribution) started');
-  console.error('Available tools: start_agent, get_agent_status, send_message, capture_screen, parallel_implement, get_parallel_status');
 }
 
 main().catch((error) => {

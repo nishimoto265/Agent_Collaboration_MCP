@@ -22,17 +22,16 @@ class AgentManager {
       this.scriptPath = internalScriptPath;
       this.paneControllerPath = internalPaneControllerPath;
       this.authHelperPath = internalAuthHelperPath;
-      console.error(`Using internal MCP scripts: ${internalScriptPath}`);
+      // Suppress console output for MCP protocol compatibility
+      // console.error(`Using internal MCP scripts: ${internalScriptPath}`);
     } else {
       this.scriptPath = path.join(this.projectDir, scriptDir, 'agent_manager.sh');
       this.paneControllerPath = path.join(this.projectDir, scriptDir, 'pane_controller.sh');
       this.authHelperPath = path.join(this.projectDir, scriptDir, 'auth_helper.sh');
-      console.error(`Using external project scripts: ${this.scriptPath}`);
+      // console.error(`Using external project scripts: ${this.scriptPath}`);
     }
-    console.error(`[DEBUG] AgentManager initialized:
-      - projectDir: ${this.projectDir}
-      - scriptPath: ${this.scriptPath}
-      - authHelperPath: ${this.authHelperPath}`);
+    // Debug output suppressed for MCP protocol compatibility
+    // console.error(`[DEBUG] AgentManager initialized:...`);
   }
 
 

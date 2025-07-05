@@ -17,10 +17,10 @@ class PaneController {
     // Use internal script if it exists, otherwise fallback to project script
     if (require('fs').existsSync(internalScriptPath)) {
       this.scriptPath = internalScriptPath;
-      console.error(`Using internal MCP pane controller: ${internalScriptPath}`);
+      // console.error(`Using internal MCP pane controller: ${internalScriptPath}`);
     } else {
       this.scriptPath = path.join(this.projectDir, scriptDir, 'pane_controller.sh');
-      console.error(`Using external project pane controller: ${this.scriptPath}`);
+      // console.error(`Using external project pane controller: ${this.scriptPath}`);
     }
   }
 
