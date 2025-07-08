@@ -91,7 +91,7 @@ npm install
 
 **簡単な方法（CLIを使用）**:
 ```bash
-claude mcp add agent-collaboration npx agent-collaboration-mcp
+claude mcp add agent-collaboration npx agent-collaboration-mcp@latest
 ```
 
 **または、JSON設定を使用**:
