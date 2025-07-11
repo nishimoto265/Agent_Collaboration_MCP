@@ -46,7 +46,7 @@ detect_agent_state() {
     local clean_screen=$(echo "$screen" | sed -E 's/\x1b\[[0-9;]*[mGKHF]//g' | sed -E 's/\x1b\[?[0-9;]*[a-zA-Z]//g')
     local compact_lower=$(echo "$clean_screen" | tr '[:upper:]' '[:lower:]' | tr -d '\n' | tr -d ' ')
     
-    # 優先度0: 最優先 - 画面の最後の有効な行に「$」が含まれていれば停止中
+    # 優先度0: 最優先 - bashプロンプトの検出を厳密化
     # 空でない最後の行を取得
     local last_valid_line=""
     local lines_array=()
@@ -61,7 +61,7 @@ detect_agent_state() {
         fi
     done
     
-    # 最後の有効な行がシェルプロンプトで終わっている場合のみ停止中と判定
+    # bashプロンプトの検出（元の簡単な判定に戻す）
     if echo "$last_valid_line" | grep -qE '\$[[:space:]]*$'; then
         echo "stopped|none|停止中（シェルプロンプト）"
         return 0
@@ -84,8 +84,11 @@ detect_agent_state() {
     
     # プロンプトボックスが表示されている場合も起動完了
     if echo "$screen" | grep -q "╭─.*─╮" && echo "$screen" | grep -q "│ >" && echo "$screen" | grep -q "╰─.*─╯"; then
-        echo "running_claude|claude|Claude起動完了"
-        return 0
+        # ボックス内に実際にプロンプトがあることを確認
+        if echo "$compact_lower" | grep -q "forshortcuts\|bypassingpermissions\|try\|tip:"; then
+            echo "running_claude|claude|Claude起動完了"
+            return 0
+        fi
     fi
     
     # 優先度1: Claude実行中の検出

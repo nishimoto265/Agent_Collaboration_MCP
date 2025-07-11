@@ -20,7 +20,8 @@ echo "テストディレクトリ: $TEST_DIR"
 echo ""
 
 # 簡単なタスクで並列実装をテスト
-echo "並列実装を開始します（ワーカー数: 2）"
+WORKER_COUNT=5
+echo "並列実装を開始します（ワーカー数: $WORKER_COUNT）"
 echo "タスク: 'Hello Worldを出力する簡単なスクリプトを作成してください'"
 echo ""
 
@@ -30,8 +31,8 @@ export CALLER_PWD="$TEST_DIR"
 # parallel_implementコマンドを実行
 /media/thithilab/volume/MCP_server/agent-collaboration-mcp/scripts/parallel/parallel_impl_manager.sh start \
     "Hello Worldを出力する簡単なスクリプトを作成してください" \
-    2 \
-    "simple" \
+    $WORKER_COUNT \
+    "complex" \
     "false" \
     "true" \
     "claude"
