@@ -26,7 +26,7 @@ The main purpose of this MCP server is to **enable agents to manage other agents
 
 ## 🛠️ Available Tools
 
-Four tools that agents can use:
+Six tools that agents can use:
 
 ### 1. `start_agent` - Start an Agent
 ```javascript
@@ -70,6 +70,28 @@ capture_screen(target="multiagent:0.3", lines=50) // Last 50 lines
 ```
 Capture screen content from panes.
 
+### 5. `parallel_implement` - Parallel Implementation
+```javascript
+parallel_implement(prompt="Implement user authentication feature")
+parallel_implement(prompt="Execute refactoring", workerCount=5, complexity="complex")
+```
+Multiple worker agents implement the same task in parallel, and a boss agent selects and integrates the best outcomes.
+
+**Important**: This feature **must be run within a Git repository**. Each worker operates in its own Git worktree.
+
+- **prompt**: Implementation instructions (required)
+- **workerCount**: Number of workers (default: 3)
+- **complexity**: Task complexity (simple, medium, complex)
+- **agentType**: Agent to use (claude, gemini)
+- **autoMerge**: Auto-merge after completion (default: false)
+
+### 6. `get_parallel_status` - Check Parallel Implementation Status
+```javascript
+get_parallel_status()                    // List all sessions
+get_parallel_status(sessionId="parallel_20240105_123456")  // Specific session details
+```
+Check the progress of parallel implementation sessions. Get work status, completion rate, error information, and more for each worker.
+
 ## 📦 Setup
 
 ### 1. Installation
@@ -86,11 +108,16 @@ cd Agent_Collaboration_MCP
 npm install
 ```
 
-### 2. Add to Claude Code
+### 2. Add to Claude Code (Recommended)
 
 **Simple method (using CLI)**:
 ```bash
 claude mcp add agent-collaboration npx agent-collaboration-mcp
+```
+
+**If you want to use automatic authentication, also add Playwright MCP**:
+```bash
+claude mcp add playwright npx @playwright/mcp@latest
 ```
 
 **Or, using JSON configuration**:

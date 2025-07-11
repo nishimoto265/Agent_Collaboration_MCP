@@ -27,7 +27,7 @@
 
 ## 🛠️ 提供ツール
 
-エージェントが使用できる4つのツール：
+エージェントが使用できる6つのツール：
 
 ### 1. `start_agent` - エージェントの起動
 ```javascript
@@ -71,6 +71,28 @@ capture_screen(target="multiagent:0.3", lines=50) // 最後の50行
 ```
 ペインの画面内容を取得します。
 
+### 5. `parallel_implement` - 並列実装
+```javascript
+parallel_implement(prompt="ユーザー認証機能を実装してください")
+parallel_implement(prompt="リファクタリングを実行", workerCount=5, complexity="complex")
+```
+複数のワーカーエージェントが同じタスクを並列で実装し、ボスエージェントが最良の成果物を選択・統合します。
+
+**重要**: この機能は**Gitリポジトリ内で実行する必要があります**。各ワーカーは独自のGit worktreeで作業を行います。
+
+- **prompt**: 実装指示（必須）
+- **workerCount**: ワーカー数（デフォルト: 3）
+- **complexity**: タスクの複雑度（simple, medium, complex）
+- **agentType**: 使用するエージェント（claude, gemini）
+- **autoMerge**: 完了後の自動マージ（デフォルト: false）
+
+### 6. `get_parallel_status` - 並列実装状態確認
+```javascript
+get_parallel_status()                    // 全セッションの一覧を取得
+get_parallel_status(sessionId="parallel_20240105_123456")  // 特定セッションの詳細
+```
+並列実装セッションの進捗状況を確認します。各ワーカーの作業状況、完了率、エラー情報などを取得できます。
+
 ## 📦 セットアップ
 
 ### 1. インストール
@@ -87,11 +109,16 @@ cd Agent_Collaboration_MCP
 npm install
 ```
 
-### 2. Claude Codeへの追加
+### 2. Claude Codeへの追加（推奨）
 
 **簡単な方法（CLIを使用）**:
 ```bash
 claude mcp add agent-collaboration npx agent-collaboration-mcp@latest
+```
+
+**自動認証機能を使用する場合は、Playwright MCPも追加**:
+```bash
+claude mcp add playwright npx @playwright/mcp@latest
 ```
 
 **または、JSON設定を使用**:
