@@ -288,7 +288,7 @@ done)
                 log_error "Boss エージェント起動コマンド失敗"
             else
                 # 起動処理が開始されるまで少し待つ
-                sleep 0.5
+                sleep 0.2
                 
                 # auth_helper.shを使って起動完了を待つ
                 log_info "Boss 起動待機中..."
@@ -377,7 +377,7 @@ $prompt
             fi
             
             # 起動処理が開始されるまで少し待つ
-            sleep 0.5
+            sleep 0.2
             
             # auth_helper.shを使って起動完了を待つ（タイムアウトを90秒に増加）
             log_info "Worker $((i+1)) 起動待機中..."
@@ -409,7 +409,7 @@ $prompt
                 fi
                 
                 # 次のWorkerを起動する前に少し待つ（並列性を保つため最小限に）
-                sleep 0.5
+                sleep 0.2
             else
                 log_error "Worker $((i+1)) 起動失敗（最大リトライ回数超過）"
             fi
