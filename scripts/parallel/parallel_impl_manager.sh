@@ -180,8 +180,7 @@ start_parallel_implementation() {
 }
 EOF
     
-    # Workerを起動
-    log_info "Worker起動中..."
+    # Worker情報を先に準備（Boss用プロンプトのため）
     local worker_branches=()
     if [ -n "$worktree_info" ]; then
         # jqを使って安全に配列を抽出
@@ -202,67 +201,7 @@ EOF
         done
     fi
     
-    for i in "${!worker_panes[@]}"; do
-        local pane="${worker_panes[$i]}"
-        local branch="${worker_branches[$i]}"
-        # Worktreeのパスは実行元ディレクトリからの相対パス
-        local base_dir="${CALLER_PWD:-$(pwd)}"
-        local worktree_path="${base_dir}/worktrees/${branch}"
-        
-        log_info "Worker $((i+1)) 起動中 (ペイン: $pane, ブランチ: $branch, エージェント: $agent_type)"
-        
-        # Workerディレクトリに移動
-        tmux send-keys -t "$pane" "cd '$worktree_path'" C-m
-        sleep 0.5
-        
-        # Worker用のプロンプトメッセージを準備
-        local worker_prompt="【並列実装タスク - Worker $((i+1))】
-
-$prompt
-
-注意事項:
-- 他のWorkerとは独立して実装してください
-- このディレクトリ ($worktree_path) で作業してください
-- 実装が完了したら、Bashツールで以下のコマンドを実行してBossに報告してください：
-  TMUX_SESSION=${MULTIAGENT_SESSION} ${SCRIPT_DIR}/../agent_tools/pane_controller.sh send 0 \"Worker$((i+1)) 実装完了\""
-        
-        # バックグラウンドでエージェント起動とプロンプト送信
-        (
-            sleep 1
-            # agent_manager.shのパスを正しく設定
-            local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
-            local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
-            
-            if [ -f "$agent_manager" ] && [ -f "$auth_helper" ]; then
-                # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
-                local pane_number="${pane##*.}"
-                log_info "$agent_type を起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $pane_number)"
-                # 並列実装セッションで実行
-                (
-                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                    export CLAUDE_NO_BROWSER=1
-                    "$agent_manager" start "$pane_number" "$agent_type"
-                )
-                
-                # auth_helper.shを使って起動完了を待つ
-                log_info "Worker $((i+1)) 起動待機中..."
-                if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$pane_number" 60 "$agent_type"; then
-                    log_info "Worker $((i+1)) 起動完了確認 - タスクを送信中..."
-                    # pane_controller.shのパスを設定
-                    local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
-                    # pane_controller.shを使ってメッセージを送信
-                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                    "$pane_controller" send "$pane_number" "$worker_prompt"
-                else
-                    log_error "Worker $((i+1)) 起動タイムアウト"
-                fi
-            else
-                log_error "agent_manager.shが見つかりません: $agent_manager"
-            fi
-        ) &
-    done
-    
-    # Bossが必要な場合は準備と起動
+    # Bossが必要な場合は最初に起動
     if [ "$needs_boss" = "true" ]; then
         log_info "Boss準備中 (ペイン: $boss_pane)"
         
@@ -270,7 +209,7 @@ $prompt
         local boss_working_dir="${CALLER_PWD:-$(pwd)}"
         log_info "Boss作業ディレクトリ: $boss_working_dir"
         tmux send-keys -t "$boss_pane" "cd '$boss_working_dir'" C-m
-        sleep 0.5
+        sleep 0.3
         
         # Boss用のプロンプトメッセージを準備
         local boss_prompt="【並列実装タスク - Boss】
@@ -331,38 +270,155 @@ done)
         
         boss_prompt+="完了時は音を鳴らして通知してください。"
         
-        # バックグラウンドでBossのエージェント起動とプロンプト送信
-        (
-            sleep 1
-            local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
-            if [ -f "$agent_manager" ]; then
-                local boss_pane_number="${boss_pane##*.}"
-                log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
-                (
-                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                    export CLAUDE_NO_BROWSER=1
-                    "$agent_manager" start "$boss_pane_number" "$agent_type"
-                )
-                
-                # pane_controller.shのパスを設定
-                local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
+        # Bossのエージェント起動とプロンプト送信（順次実行）
+        local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
+        local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
+        local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
+        
+        if [ -f "$agent_manager" ] && [ -f "$auth_helper" ]; then
+            local boss_pane_number="${boss_pane##*.}"
+            log_info "Boss用$agent_typeを起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $boss_pane_number)"
+            
+            # 環境変数を設定
+            export TMUX_SESSION="${MULTIAGENT_SESSION}"
+            export CLAUDE_NO_BROWSER=1
+            
+            # エージェント起動
+            if ! "$agent_manager" start "$boss_pane_number" "$agent_type"; then
+                log_error "Boss エージェント起動コマンド失敗"
+            else
+                # 起動処理が開始されるまで少し待つ
+                sleep 0.5
                 
                 # auth_helper.shを使って起動完了を待つ
-                local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
                 log_info "Boss 起動待機中..."
-                if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$boss_pane_number" 60 "$agent_type"; then
-                    log_info "Boss 起動完了確認 - タスクを送信中..."
-                    # pane_controller.shを使ってメッセージを送信
-                    export TMUX_SESSION="${MULTIAGENT_SESSION}"
-                    "$pane_controller" send "$boss_pane_number" "$boss_prompt"
+                local retry_count=0
+                local max_retries=3
+                local startup_success=false
+                
+                while [ $retry_count -lt $max_retries ]; do
+                    if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$boss_pane_number" 90 "$agent_type"; then
+                        log_success "Boss 起動完了確認"
+                        startup_success=true
+                        break
+                    else
+                        retry_count=$((retry_count + 1))
+                        if [ $retry_count -lt $max_retries ]; then
+                            log_warn "Boss 起動確認失敗 (リトライ $retry_count/$max_retries)"
+                            sleep 1
+                        fi
+                    fi
+                done
+                
+                if [ "$startup_success" = "true" ]; then
+                    # 起動完了後、すぐにタスクを送信
+                    log_info "Boss にタスクを送信中..."
+                    if ! "$pane_controller" send "$boss_pane_number" "$boss_prompt"; then
+                        log_error "Boss タスク送信失敗"
+                    else
+                        log_success "Boss タスク送信完了"
+                    fi
                 else
-                    log_error "Boss 起動タイムアウト"
+                    log_error "Boss 起動失敗（最大リトライ回数超過）"
                 fi
-            else
-                log_error "agent_manager.shが見つかりません: $agent_manager"
             fi
-        ) &
+        else
+            log_error "必要なスクリプトが見つかりません: agent_manager.sh または auth_helper.sh"
+        fi
     fi
+    
+    # Workerを起動
+    log_info "Worker起動中..."
+    
+    # 各Workerを順次起動（バックグラウンドではなく順番に実行）
+    for i in "${!worker_panes[@]}"; do
+        local pane="${worker_panes[$i]}"
+        local branch="${worker_branches[$i]}"
+        # Worktreeのパスは実行元ディレクトリからの相対パス
+        local base_dir="${CALLER_PWD:-$(pwd)}"
+        local worktree_path="${base_dir}/worktrees/${branch}"
+        
+        log_info "Worker $((i+1)) 起動処理開始 (ペイン: $pane, ブランチ: $branch, エージェント: $agent_type)"
+        
+        # Workerディレクトリに移動
+        tmux send-keys -t "$pane" "cd '$worktree_path'" C-m
+        sleep 0.3  # cdコマンドの完了を確実に待つ
+        
+        # Worker用のプロンプトメッセージを準備
+        local worker_prompt="【並列実装タスク - Worker $((i+1))】
+
+$prompt
+
+注意事項:
+- 他のWorkerとは独立して実装してください
+- このディレクトリ ($worktree_path) で作業してください
+- 実装が完了したら、Bashツールで以下のコマンドを実行してBossに報告してください：
+  TMUX_SESSION=${MULTIAGENT_SESSION} ${SCRIPT_DIR}/../agent_tools/pane_controller.sh send 0 \"Worker$((i+1)) 実装完了\""
+        
+        # エージェント起動とプロンプト送信（順次実行）
+        # agent_manager.shのパスを正しく設定
+        local agent_manager="${SCRIPT_DIR}/../agent_tools/agent_manager.sh"
+        local auth_helper="${SCRIPT_DIR}/../agent_tools/auth_helper.sh"
+        local pane_controller="${SCRIPT_DIR}/../agent_tools/pane_controller.sh"
+        
+        if [ -f "$agent_manager" ] && [ -f "$auth_helper" ]; then
+            # ペイン番号を抽出 (例: "parallel_impl_20250705_142530:0.1" -> "1")
+            local pane_number="${pane##*.}"
+            log_info "$agent_type を起動中 (セッション: ${MULTIAGENT_SESSION}, ペイン番号: $pane_number)"
+            
+            # エージェント起動（環境変数を設定して実行）
+            export TMUX_SESSION="${MULTIAGENT_SESSION}"
+            export CLAUDE_NO_BROWSER=1
+            
+            # エージェント起動コマンドを実行
+            if ! "$agent_manager" start "$pane_number" "$agent_type"; then
+                log_error "Worker $((i+1)) エージェント起動コマンド失敗"
+                continue
+            fi
+            
+            # 起動処理が開始されるまで少し待つ
+            sleep 0.5
+            
+            # auth_helper.shを使って起動完了を待つ（タイムアウトを90秒に増加）
+            log_info "Worker $((i+1)) 起動待機中..."
+            local retry_count=0
+            local max_retries=3
+            local startup_success=false
+            
+            while [ $retry_count -lt $max_retries ]; do
+                if TMUX_SESSION="${MULTIAGENT_SESSION}" "$auth_helper" wait "$pane_number" 90 "$agent_type"; then
+                    log_success "Worker $((i+1)) 起動完了確認"
+                    startup_success=true
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    if [ $retry_count -lt $max_retries ]; then
+                        log_warn "Worker $((i+1)) 起動確認失敗 (リトライ $retry_count/$max_retries)"
+                        sleep 1
+                    fi
+                fi
+            done
+            
+            if [ "$startup_success" = "true" ]; then
+                # 起動完了後、すぐにタスクを送信
+                log_info "Worker $((i+1)) にタスクを送信中..."
+                if ! "$pane_controller" send "$pane_number" "$worker_prompt"; then
+                    log_error "Worker $((i+1)) タスク送信失敗"
+                else
+                    log_success "Worker $((i+1)) タスク送信完了"
+                fi
+                
+                # 次のWorkerを起動する前に少し待つ（並列性を保つため最小限に）
+                sleep 0.5
+            else
+                log_error "Worker $((i+1)) 起動失敗（最大リトライ回数超過）"
+            fi
+        else
+            log_error "必要なスクリプトが見つかりません: agent_manager.sh または auth_helper.sh"
+        fi
+    done
+    
+    log_info "全Workerの起動処理完了"
     
     # ステータスを更新
     jq '.status = "workers_started"' "$session_file" > "${session_file}.tmp" && mv "${session_file}.tmp" "$session_file"

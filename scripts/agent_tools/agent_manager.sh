@@ -99,13 +99,25 @@ start_agent() {
         return 1
     fi
     
-    # 現在の状態確認
-    local current_status=$(get_agent_state "$pane")
+    # 現在の状態確認（リトライ付き）
+    local retry_count=0
+    local max_retries=3
+    local current_status=""
+    
+    while [ $retry_count -lt $max_retries ]; do
+        current_status=$(get_agent_state "$pane")
+        if [ -n "$current_status" ]; then
+            break
+        fi
+        retry_count=$((retry_count + 1))
+        log_warn "状態確認失敗 (リトライ $retry_count/$max_retries)"
+        sleep 1
+    done
     
     if [ "$current_status" = "running" ]; then
         log_warn "ペイン $pane でエージェントが実行中です - 停止して新しいエージェントを起動します"
         stop_agent "$pane"
-        sleep 1
+        sleep 2  # 停止完了を確実に待つ
     fi
     
     # コマンド決定
@@ -118,14 +130,34 @@ start_agent() {
         log_info "$agent_type 起動中 (ペイン $pane)"
     fi
     
-    # エージェント起動
-    "$PANE_CONTROLLER" exec "$pane" "$command"
+    # エージェント起動（リトライ付き）
+    local launch_retry=0
+    local max_launch_retries=3
+    local launch_success=false
+    
+    while [ $launch_retry -lt $max_launch_retries ]; do
+        if "$PANE_CONTROLLER" exec "$pane" "$command"; then
+            launch_success=true
+            break
+        else
+            launch_retry=$((launch_retry + 1))
+            if [ $launch_retry -lt $max_launch_retries ]; then
+                log_warn "起動コマンド送信失敗 (リトライ $launch_retry/$max_launch_retries)"
+                sleep 2
+            fi
+        fi
+    done
+    
+    if [ "$launch_success" = "false" ]; then
+        log_error "エージェント起動コマンドの送信に失敗しました"
+        return 1
+    fi
     
     # エージェントタイプ別の認証・起動確認
     log_info "$agent_type 認証/起動プロセスを監視中..."
     
     # プロセスが起動するまで少し待つ
-    sleep 2
+    sleep 1
     
     # Geminiの場合は認証状態を定期的にチェック
     if [ "$agent_type" = "gemini" ]; then
@@ -137,14 +169,14 @@ start_agent() {
         fi
     fi
     
+    # 起動完了待機（タイムアウトを300秒に設定）
     if "$AUTH_HELPER" wait "$pane" 300 "$agent_type"; then
         log_success "$agent_type 起動・認証完了"
+        return 0
     else
         log_error "$agent_type 認証/起動失敗"
         return 1
     fi
-    
-    return 0
 }
 
 # エージェント停止

@@ -57,10 +57,22 @@ send_message() {
     else
         # 直接tmux send-keys使用
         local target=$(get_tmux_target "$pane_num")
+        
+        # メッセージ送信前に少し待つ（tmuxバッファのクリアを待つ）
+        sleep 0.1
+        
+        # メッセージを送信
         tmux send-keys -t "$target" "$message"
+        
+        # エンター送信
         if [ "$enter" = "true" ]; then
+            # メッセージとエンターの間に少し待つ
+            sleep 0.2
             tmux send-keys -t "$target" C-m
         fi
+        
+        # 送信完了後も少し待つ（次の操作との競合を避ける）
+        sleep 0.3
     fi
     
     log_success "メッセージ送信完了"

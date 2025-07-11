@@ -351,6 +351,9 @@ wait_for_agent_startup() {
     
     local elapsed=0
     local check_interval=2
+    local stable_count=0
+    local required_stable_checks=2  # 2回連続で同じ状態を確認
+    local last_state=""
     
     while [ $elapsed -lt $timeout ]; do
         local state_result=$(get_detailed_state "$pane")
@@ -382,8 +385,17 @@ wait_for_agent_startup() {
         case "$agent_type" in
             "claude")
                 if [[ "$state" == "running_claude" ]] || [[ "$state" == "executing_claude" ]]; then
-                    log_success "Claude起動完了"
-                    return 0
+                    # 状態が安定しているか確認
+                    if [ "$state" = "$last_state" ]; then
+                        stable_count=$((stable_count + 1))
+                        if [ $stable_count -ge $required_stable_checks ]; then
+                            log_success "Claude起動完了（安定確認済み）"
+                            return 0
+                        fi
+                    else
+                        stable_count=0
+                    fi
+                    last_state="$state"
                 elif [[ "$state" == "auth_claude" ]]; then
                     # デバッグログ
                     log_info "[DEBUG] auth_claude detected - details: $details, auth_type: $auth_type"
@@ -449,19 +461,39 @@ wait_for_agent_startup() {
                             log_warn "[DEBUG] Unknown auth_type: '$auth_type' for details: '$details'"
                             ;;
                     esac
+                    # 認証処理後は状態カウントをリセット
+                    stable_count=0
+                    last_state=""
                 fi
                 ;;
             "gemini")
                 if [[ "$state" == "running_gemini" ]]; then
-                    log_success "Gemini起動完了"
-                    return 0
+                    # 状態が安定しているか確認
+                    if [ "$state" = "$last_state" ]; then
+                        stable_count=$((stable_count + 1))
+                        if [ $stable_count -ge $required_stable_checks ]; then
+                            log_success "Gemini起動完了（安定確認済み）"
+                            return 0
+                        fi
+                    else
+                        stable_count=0
+                    fi
+                    last_state="$state"
                 fi
                 ;;
             *)
                 # その他のエージェントは起動チェックのみ
                 if [[ "$state" != "stopped" ]]; then
-                    log_success "$agent_type 起動完了"
-                    return 0
+                    if [ "$state" = "$last_state" ]; then
+                        stable_count=$((stable_count + 1))
+                        if [ $stable_count -ge $required_stable_checks ]; then
+                            log_success "$agent_type 起動完了（安定確認済み）"
+                            return 0
+                        fi
+                    else
+                        stable_count=0
+                    fi
+                    last_state="$state"
                 fi
                 ;;
         esac
